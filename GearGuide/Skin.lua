@@ -13,7 +13,7 @@ local WHITE = "Interface\\Buttons\\WHITE8x8"
 -- Palette ({r, g, b, a}, 0-1)
 ---------------------------------------------------------------------------
 Skin.C = {
-    bg        = { 0.052, 0.045, 0.038, 0.97 }, -- window background (warm near-black)
+    bg        = { 0.105, 0.085, 0.066, 0.97 }, -- window background (warm dark brown; edges darken via vignette)
     panel     = { 0.060, 0.053, 0.046, 0.55 }, -- inset panels, edit boxes (backdrop shows through)
     header    = { 0.020, 0.017, 0.014, 0.45 }, -- window title bar (darker band over the backdrop)
     border    = { 1.000, 1.000, 1.000, 0.09 }, -- 1px hairline
@@ -36,13 +36,13 @@ Skin.C = {
     menu         = { 0.055, 0.049, 0.043, 0.98 }, -- dropdown menus (nearly opaque)
     -- bar rows (EllesmereUI-style lists): near-black fill, slightly lighter at the left edge
     -- Rows are see-through so the window backdrop and watermark show behind them.
-    listBg       = { 0.000, 0.000, 0.000, 0.08 }, -- list area backing (nearly transparent)
-    row          = { 0.043, 0.039, 0.035, 0.50 }, -- #0B0A09
-    rowLight     = { 0.100, 0.090, 0.080, 0.58 },
-    rowHeader    = { 0.060, 0.049, 0.039, 0.55 }, -- slot headers: warm accent-tinted
-    rowHeaderLight = { 0.170, 0.132, 0.096, 0.65 },
+    listBg       = { 0.000, 0.000, 0.000, 0.00 }, -- list area backing (transparent: backdrop shows)
+    row          = { 0.043, 0.039, 0.035, 0.32 }, -- #0B0A09, see-through
+    rowLight     = { 0.100, 0.090, 0.080, 0.40 },
+    rowHeader    = { 0.060, 0.049, 0.039, 0.40 }, -- slot headers: warm accent-tinted
+    rowHeaderLight = { 0.170, 0.132, 0.096, 0.50 },
     rowHover     = { 1.000, 1.000, 1.000, 0.06 },
-    vignette     = { 0.000, 0.000, 0.000, 0.50 }, -- window edge darkening
+    vignette     = { 0.000, 0.000, 0.000, 0.75 }, -- window edge darkening
 }
 local C = Skin.C
 

@@ -1356,7 +1356,7 @@ local function createWindow()
 
     frame = Skin:CreateWindow("GearGuideFrame", {
         title = "GearGuide", subtitle = "", titleSize = 17, headerHeight = 40,
-        watermark = "Interface\\AddOns\\GearGuide\\Media\\logo", watermarkAlpha = 0.07,
+        watermark = "Interface\\AddOns\\GearGuide\\Media\\logo", watermarkAlpha = 0.22, vignette = 140,
         width = w, height = h, onMoved = savePosition, escClose = true,
     })
     if UISpecialFrames then
