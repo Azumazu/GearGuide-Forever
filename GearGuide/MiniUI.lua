@@ -12,7 +12,8 @@ local ROW_H = 24      -- bar rows (Skin:BarRow): 3px quality bar, 24px icon
 local ROW_GAP = 2
 local PITCH = ROW_H + ROW_GAP
 local PAD = 4
-local MAX_ROWS = 20
+local MAX_ROWS = 20   -- visible rows (the +/- count sets the window height)
+local LIST_MAX = 60   -- items fetched; the mouse wheel scrolls through those beyond the visible rows
 local FONT_SIZE = 11
 
 local READY = "Interface\\RaidFrame\\ReadyCheck-Ready"
@@ -23,6 +24,8 @@ local frame          -- created lazily on first ShowMini
 local rows = {}
 local zoneMode = false     -- showing "In <zone>" picks instead of the top picks
 local autoOpened = false   -- the mini was opened by the zone auto-popup (not by the user)
+local list = {}            -- every pick currently listed (up to LIST_MAX)
+local offset = 0           -- scroll position: index of the first visible pick, minus one
 
 ---------------------------------------------------------------------------
 -- Helpers
@@ -328,7 +331,7 @@ local function createFrame()
     local plus = ns.Skin:IconButton(header, "+", BTN)
     plus:SetPoint("RIGHT", auto, "LEFT", -8, 0)
     plus:SetScript("OnClick", function() ns:SetMiniCount(GearGuideDB.mini.count + 1) end)
-    addTooltip(plus, "Show more items")
+    addTooltip(plus, "Show more rows", function() return "Scroll with the mouse wheel to see the rest of the list." end)
     f.plus = plus
 
     local countText = ns.Skin:Text(header, FONT_SIZE, "text")
@@ -340,7 +343,7 @@ local function createFrame()
     local minus = ns.Skin:IconButton(header, "-", BTN)
     minus:SetPoint("RIGHT", countText, "LEFT", -4, 0)
     minus:SetScript("OnClick", function() ns:SetMiniCount(GearGuideDB.mini.count - 1) end)
-    addTooltip(minus, "Show fewer items")
+    addTooltip(minus, "Show fewer rows", function() return "Scroll with the mouse wheel to see the rest of the list." end)
     f.minus = minus
     title:SetPoint("RIGHT", minus, "LEFT", -8, 0)  -- long zone names truncate
 
@@ -354,8 +357,39 @@ local function createFrame()
     note:Hide()
     f.note = note
 
+    -- Scrolling: the mouse wheel anywhere over the tracker (rows don't take wheel input, so it
+    -- reaches the frame). A 2px thumb in the right padding shows the position; no extra width.
+    f:EnableMouseWheel(true)
+    f:SetScript("OnMouseWheel", function(_, delta) ns:ScrollMini(-delta) end)
+    local track = f:CreateTexture(nil, "ARTWORK")
+    track:SetWidth(2)
+    track:SetPoint("TOPRIGHT", f, "TOPRIGHT", -1, -(HEADER_H + PAD))
+    track:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, PAD)
+    track:SetColorTexture(1, 1, 1, 0.08)
+    f.track = track
+    local thumb = f:CreateTexture(nil, "OVERLAY")
+    thumb:SetWidth(2)
+    thumb:SetColorTexture(color("accent"))
+    f.thumb = thumb
+
     restorePosition(f)
     return f
+end
+
+-- Positions the scroll thumb for `visible` rows out of #list; hidden when everything fits.
+local function updateScrollbar(visible)
+    local total = #list
+    if total <= visible or visible == 0 then
+        frame.track:Hide(); frame.thumb:Hide()
+        return
+    end
+    local trackH = visible * PITCH - ROW_GAP
+    local thumbH = math.max(8, trackH * visible / total)
+    local y = (trackH - thumbH) * offset / (total - visible)
+    frame.thumb:SetHeight(thumbH)
+    frame.thumb:ClearAllPoints()
+    frame.thumb:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -1, -(HEADER_H + PAD) - y)
+    frame.track:Show(); frame.thumb:Show()
 end
 
 local function emptyMessage()
@@ -370,27 +404,15 @@ end
 ---------------------------------------------------------------------------
 -- Public API
 ---------------------------------------------------------------------------
-function ns:RefreshMini()
-    if not frame or not frame:IsShown() then return end
+-- Fills the visible rows from list[offset + 1 ...]. Scrolling only calls this, no re-fetch.
+local function render()
     local db = GearGuideDB.mini
-    db.count = clampCount(db.count)
-    updateHeader()
-
-    -- Zone view when recommended items can be obtained right here; otherwise the top picks.
-    local picks, zoneName = {}, nil
-    if self.GetZonePicks then picks, zoneName = self:GetZonePicks(db.count) end
-    picks = picks or {}
-    zoneMode = #picks > 0
-    if zoneMode then
-        frame.title:SetText("In " .. (zoneName or "this zone"))
-    else
-        frame.title:SetText("GearGuide")
-        picks = self:GetTopPicks(db.count, db.hideCompleted) or {}
-    end
-    local n = math.min(#picks, MAX_ROWS)
+    local visible = math.min(db.count, #list)
+    offset = math.max(0, math.min(offset, #list - visible))
+    local n = visible
     for i = 1, n do
         rows[i] = rows[i] or createRow(frame, i)
-        fillRow(rows[i], picks[i])
+        fillRow(rows[i], list[offset + i])
     end
     for i = n + 1, #rows do
         rows[i].pick = nil
@@ -406,10 +428,44 @@ function ns:RefreshMini()
         frame:SetHeight(HEADER_H + PAD * 2 + n * PITCH - ROW_GAP + 2)
     end
 
-    -- Keep the tooltip in sync if the list changed under the cursor.
+    updateScrollbar(n)
+
+    -- Keep the tooltip in sync if the list changed (or scrolled) under the cursor.
     for i = 1, n do
         if rows[i]:IsMouseOver() and GameTooltip:IsOwned(rows[i]) then rowOnEnter(rows[i]) end
     end
+end
+
+function ns:RefreshMini()
+    if not frame or not frame:IsShown() then return end
+    local db = GearGuideDB.mini
+    db.count = clampCount(db.count)
+    updateHeader()
+
+    -- Zone view when recommended items can be obtained right here; otherwise the top picks.
+    local picks, zoneName = {}, nil
+    if self.GetZonePicks then picks, zoneName = self:GetZonePicks(LIST_MAX) end
+    picks = picks or {}
+    local wasZone = zoneMode
+    zoneMode = #picks > 0
+    if zoneMode then
+        frame.title:SetText("In " .. (zoneName or "this zone"))
+    else
+        frame.title:SetText("GearGuide")
+        picks = self:GetTopPicks(LIST_MAX, db.hideCompleted) or {}
+    end
+    if zoneMode ~= wasZone then offset = 0 end  -- a different list: start at its top
+    list = picks
+    render()  -- clamps the scroll position to the new list
+end
+
+-- delta: +1 scrolls down a row, -1 up.
+function ns:ScrollMini(delta)
+    if not frame or not frame:IsShown() then return end
+    local before = offset
+    offset = offset + delta
+    render()
+    return offset ~= before
 end
 
 local function showFrame()

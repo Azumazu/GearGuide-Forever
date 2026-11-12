@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.8 (2026-11-12)
+
+- The mini tracker scrolls: the +/- buttons set how many rows it shows, and the mouse wheel
+  scrolls through the rest of the list (up to 60 items). A thin bar on the right shows where you are
+- Common (white) items are no longer recommended; favorites still show. The Gear Browser now
+  starts at Uncommon+ (pick Common+ or Any quality in its quality filter to see them)
+
 ## 0.4.7 (2026-11-12)
 
 - The mini tracker hides itself in battlegrounds and arenas and comes back when you leave

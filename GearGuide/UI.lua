@@ -77,7 +77,7 @@ local state = {
     flashId = nil, flashUntil = 0,
     filter = {
         text = "", class = nil, spec = nil, slot = 0, minL = nil, maxL = nil,
-        quality = 1, sort = 1, usable = true, hideDone = false, favOnly = false,
+        quality = 3, sort = 1, usable = true, hideDone = false, favOnly = false,  -- 3 = Uncommon+
     },
 }
 
