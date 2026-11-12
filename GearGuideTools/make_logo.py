@@ -152,7 +152,9 @@ def main() -> int:
     media = ROOT / "GearGuide" / "Media"
     media.mkdir(exist_ok=True)
     logo.resize((64, 64), Image.LANCZOS).save(media / "icon.tga", compression=None)  # WoW: 32-bit uncompressed TGA
-    print("wrote branding/GearGuide-logo-1024.png, branding/GearGuide-logo-400.png, GearGuide/Media/icon.tga")
+    logo.resize((256, 256), Image.LANCZOS).save(media / "logo.tga", compression=None)  # sidebar logo / watermark
+    print("wrote branding/GearGuide-logo-1024.png, branding/GearGuide-logo-400.png, "
+          "GearGuide/Media/icon.tga (64), GearGuide/Media/logo.tga (256)")
     return 0
 
 

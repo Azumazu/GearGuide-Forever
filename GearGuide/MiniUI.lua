@@ -217,7 +217,8 @@ local function createFrame()
     f:SetClampedToScreen(true)
     f:SetMovable(true)
     f:EnableMouse(true)
-    ns.Skin:SetBackdrop(f, "bg", "border")
+    -- Same warm backdrop + 1px warm edge as the main window, with a lighter vignette, no watermark.
+    ns.Skin:WindowBackdrop(f, { vignette = 22 })
     f:Hide()
 
     -- Header: drag handle + controls

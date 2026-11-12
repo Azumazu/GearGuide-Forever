@@ -403,8 +403,7 @@ local function fillRow(row, d)
             -- "Favorites" section header on the Recommended tab
             row:SetBarIcon(ns.Skin.STAR, { 0, 1, 0, 1 })
             row:SetBarQuality(nil, "accent")
-            row.hLink:SetText(ns.Skin:Hex("textDim") .. string.format("%d chosen", d.count or 0)
-                .. DOT .. "click a star or Alt-click a row to change|r")
+            row.hLink:SetText(ns.Skin:Hex("textDim") .. string.format("%d chosen", d.count or 0) .. "|r")
         elseif d.equippedLink then
             local eid = ns.LinkToId(d.equippedLink)
             row:SetBarIcon(eid and rowIcon(eid) or ns.QUESTION_ICON)
@@ -520,9 +519,6 @@ local function buildRecommendedRows()
     local rec = ns:BuildRecommendations()
     local class = ns:GetPlayerClass()
     local spec = ns:GetSpecInfo(class, ns:GetPlayerSpec())
-    W.rangeLine:SetText(classLabel(class) .. DOT .. (spec and spec.label or "?")
-        .. " (" .. roleLabel(spec and spec.role) .. ")" .. DOT
-        .. string.format("req. level %d%s%d", rec.minL, DASH, rec.maxL))
 
     local rows = {}
     emptyDatabaseNote(rows)
@@ -1137,22 +1133,25 @@ local function createBrowseBar(parent)
     return bar
 end
 
+-- The Recommended tab has no filter bar: an empty 1px anchor keeps applyTab simple.
 local function createRecBar(parent)
-    local Skin = ns.Skin
     local bar = CreateFrame("Frame", nil, parent)
-    bar:SetHeight(34)
-    W.rangeLine = Skin:Text(bar, Skin.SIZE.header, "text")
-    W.rangeLine:SetPoint("TOPLEFT", 2, -2)
-    W.rangeLine:SetPoint("RIGHT", bar, "RIGHT", -2, 0)
-    W.rangeLine:SetWordWrap(false)
-    local hint = Skin:Text(bar, Skin.SIZE.small, "textDim")
-    hint:SetPoint("TOPLEFT", W.rangeLine, "BOTTOMLEFT", 0, -4)
-    hint:SetPoint("RIGHT", bar, "RIGHT", -2, 0)
-    hint:SetWordWrap(false)
-    hint:SetText("Best picks per slot for your level range. Green = upgrade over equipped, "
-        .. "orange level = not equippable yet. Star an item to pin it under Favorites.")
+    bar:SetHeight(1)
     W.recBar = bar
     return bar
+end
+
+-- Window subtitle: "<Class> · <Spec> (<role>) · req. level X–Y" (same range as the recommendations).
+local function updateSubtitle()
+    if not frame.subtitle then return end
+    local class = ns:GetPlayerClass()
+    local spec = ns:GetSpecInfo(class, ns:GetPlayerSpec())
+    local level = UnitLevel("player")
+    local minL = math.max(1, level - (GearGuideDB.levelBehind or 5))
+    local maxL = level + (GearGuideDB.levelAhead or 3)
+    frame.subtitle:SetText(classLabel(class) .. DOT .. (spec and spec.label or "?")
+        .. " (" .. roleLabel(spec and spec.role) .. ")" .. DOT
+        .. string.format("req. level %d%s%d", minL, DASH, maxL))
 end
 
 ---------------------------------------------------------------------------
@@ -1164,7 +1163,7 @@ local function applyTab(tab)
     W.recBar:SetShown(state.tab == "recommended")
     W.browseBar:SetShown(state.tab == "browser")
     W.listBox:ClearAllPoints()
-    W.listBox:SetPoint("TOPLEFT", active, "BOTTOMLEFT", 0, -4)
+    W.listBox:SetPoint("TOPLEFT", active, "BOTTOMLEFT", 0, state.tab == "browser" and -4 or -1)
     W.listBox:SetPoint("BOTTOMRIGHT", W.left, "BOTTOMRIGHT", 0, 0)
     W.recTab:SetActive(state.tab == "recommended")
     W.browseTab:SetActive(state.tab == "browser")
@@ -1205,7 +1204,7 @@ local function createDetail(content)
     local Skin = ns.Skin
     local detail = Skin:Panel(content, "panel", "border")
     detail:SetWidth(DETAIL_W)
-    detail:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, 0)
+    detail:SetPoint("TOPRIGHT", W.tabStrip, "BOTTOMRIGHT", 0, -GAP)
     detail:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, FOOTER_H + 4)
     W.detail = detail
 
@@ -1338,6 +1337,14 @@ local function createListBox(left)
     list.frame:SetPoint("TOPLEFT", ch, "BOTTOMLEFT", 0, -ROW_GAP)
     list.frame:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -1, 1)
     list.frame:HookScript("OnSizeChanged", function() updateColHeader() end)
+    if frame.watermark then
+        frame.watermark:ClearAllPoints()
+        frame.watermark:SetPoint("CENTER", box, "CENTER", 0, 0)
+        box:HookScript("OnSizeChanged", function(_, w, h)
+            local size = math.max(120, math.min(320, math.floor(math.min(w or 0, h or 0) * 0.7)))
+            frame.watermark:SetSize(size, size)
+        end)
+    end
     list:SetSelected(isSelected)
 end
 
@@ -1348,7 +1355,9 @@ local function createWindow()
     local w, h = clampSize(db.w, db.h)
 
     frame = Skin:CreateWindow("GearGuideFrame", {
-        title = "GearGuide", width = w, height = h, onMoved = savePosition, escClose = true,
+        title = "GearGuide", subtitle = "", titleSize = 17, headerHeight = 40,
+        watermark = "Interface\\AddOns\\GearGuide\\Media\\logo", watermarkAlpha = 0.07,
+        width = w, height = h, onMoved = savePosition, escClose = true,
     })
     if UISpecialFrames then
         local found = false
@@ -1362,16 +1371,8 @@ local function createWindow()
     frame:Hide()
     Skin:ResizeGrip(frame, MIN_W, MIN_H, MAX_W, MAX_H, saveSize)
 
-    -- Header: title | tabs ............ Mini | Spec | x
+    -- Header: title / dim subtitle (class · spec · level range) ........ Mini | Spec | x
     local header = frame.header
-    frame.title:ClearAllPoints()
-    frame.title:SetPoint("LEFT", header, "LEFT", 15, 0)
-    W.recTab = Skin:Button(header, "Recommended", 96, 18)
-    W.recTab:SetPoint("LEFT", frame.title, "RIGHT", 14, 0)
-    W.recTab:SetScript("OnClick", function() setTab("recommended") end)
-    W.browseTab = Skin:Button(header, "Gear Browser", 96, 18)
-    W.browseTab:SetPoint("LEFT", W.recTab, "RIGHT", 2, 0)
-    W.browseTab:SetScript("OnClick", function() setTab("browser") end)
 
     -- The player's spec: drives the Recommended tab and the mini tracker.
     W.specDD = Skin:Dropdown(header, 184, {
@@ -1391,10 +1392,10 @@ local function createWindow()
         tooltip = { "Your specialization", "Used to score the Recommended tab and the mini tracker. "
             .. "Auto follows your talents." },
     })
-    W.specDD:SetHeight(18)
+    W.specDD:SetHeight(20)
     W.specDD:SetPoint("RIGHT", frame.closeButton, "LEFT", -6, 0)
 
-    W.miniBtn = Skin:Button(header, "Mini", 44, 18)
+    W.miniBtn = Skin:Button(header, "Mini", 44, 20)
     W.miniBtn:SetPoint("RIGHT", W.specDD, "LEFT", -4, 0)
     W.miniBtn:SetScript("OnClick", function(self)
         ns:ToggleMini()
@@ -1406,8 +1407,26 @@ local function createWindow()
         GameTooltip:Show()
     end)
     W.miniBtn:SetScript("OnLeave", hideTooltip)
+    frame.subtitle:SetPoint("RIGHT", W.miniBtn, "LEFT", -10, -8)  -- truncates instead of overlapping
 
     local content = frame.content
+
+    -- Tab strip under the header: text tabs with a copper underline on the active one.
+    local strip = CreateFrame("Frame", nil, content)
+    strip:SetHeight(26)
+    strip:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+    strip:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, 0)
+    local stripLine = Skin:Divider(strip, "edge")
+    stripLine:SetPoint("BOTTOMLEFT")
+    stripLine:SetPoint("BOTTOMRIGHT")
+    stripLine:SetAlpha(0.5)
+    W.tabStrip = strip
+    W.recTab = Skin:Tab(strip, "Recommended", 26)
+    W.recTab:SetPoint("BOTTOMLEFT", strip, "BOTTOMLEFT", 0, 0)
+    W.recTab:SetScript("OnClick", function() setTab("recommended") end)
+    W.browseTab = Skin:Tab(strip, "Gear Browser", 26)
+    W.browseTab:SetPoint("LEFT", W.recTab, "RIGHT", 4, 0)
+    W.browseTab:SetScript("OnClick", function() setTab("browser") end)
 
     -- Footer
     -- Opt-out for in-game source sharing (Comm.lua)
@@ -1424,18 +1443,15 @@ local function createWindow()
         GameTooltip:Show()
     end)
     W.shareBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
-    W.hint = Skin:Text(content, Skin.SIZE.small, "textDim")
-    W.hint:SetPoint("RIGHT", W.shareBtn, "LEFT", -10, 0)
-    W.hint:SetText("Shift-click: link" .. DOT .. "Ctrl-click: preview")
     W.status = Skin:Text(content, Skin.SIZE.small, "textDim")
     W.status:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 2, 0)
-    W.status:SetPoint("RIGHT", W.hint, "LEFT", -12, 0)
+    W.status:SetPoint("RIGHT", W.shareBtn, "LEFT", -12, 0)
     W.status:SetWordWrap(false)
 
     createDetail(content)
 
     local left = CreateFrame("Frame", nil, content)
-    left:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+    left:SetPoint("TOPLEFT", W.tabStrip, "BOTTOMLEFT", 0, -GAP)
     left:SetPoint("BOTTOMRIGHT", W.detail, "BOTTOMLEFT", -GAP, 0)
     W.left = left
 
@@ -1512,6 +1528,7 @@ function ns:RefreshUI()
         syncBrowserControls()
     end
     updateHeader()
+    updateSubtitle()
     W.classSel:Refresh()
     W.specSel:Refresh()  -- follows the player's spec when browsing their own class
     local data

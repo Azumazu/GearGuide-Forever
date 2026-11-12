@@ -13,33 +13,36 @@ local WHITE = "Interface\\Buttons\\WHITE8x8"
 -- Palette ({r, g, b, a}, 0-1)
 ---------------------------------------------------------------------------
 Skin.C = {
-    bg        = { 0.035, 0.031, 0.027, 0.95 }, -- window background (warm near-black)
-    panel     = { 0.062, 0.056, 0.050, 0.85 }, -- inset panels, edit boxes
-    header    = { 0.058, 0.051, 0.045, 1.00 }, -- window title bar
+    bg        = { 0.052, 0.045, 0.038, 0.97 }, -- window background (warm near-black)
+    panel     = { 0.060, 0.053, 0.046, 0.55 }, -- inset panels, edit boxes (backdrop shows through)
+    header    = { 0.020, 0.017, 0.014, 0.45 }, -- window title bar (darker band over the backdrop)
     border    = { 1.000, 1.000, 1.000, 0.09 }, -- 1px hairline
     accent    = { 0.863, 0.655, 0.498, 1.00 }, -- warm copper (#DCA77F)
     text      = { 0.925, 0.910, 0.890, 1.00 },
     textDim   = { 0.580, 0.560, 0.530, 1.00 },
     hover     = { 1.000, 1.000, 1.000, 0.06 },
-    selected  = { 0.863, 0.655, 0.498, 0.22 },
+    selected  = { 0.863, 0.655, 0.498, 0.18 },
     done      = { 0.380, 0.800, 0.460, 1.00 },
     partial   = { 0.950, 0.760, 0.320, 1.00 },
     upgrade   = { 0.330, 0.850, 0.420, 1.00 },
     downgrade = { 0.920, 0.360, 0.320, 1.00 },
     -- extras (not part of the contract, used internally)
-    button       = { 0.100, 0.089, 0.078, 0.95 },
+    button       = { 0.070, 0.061, 0.052, 0.55 }, -- outlined buttons: translucent fill + warm edge
+    edge         = { 0.420, 0.335, 0.260, 0.70 }, -- warm 1px outline (window, buttons, inputs)
     borderStrong = { 1.000, 1.000, 1.000, 0.22 },
     stripe       = { 1.000, 1.000, 1.000, 0.025 },
     track        = { 1.000, 1.000, 1.000, 0.05 },
     thumb        = { 0.580, 0.560, 0.530, 0.60 },
     menu         = { 0.055, 0.049, 0.043, 0.98 }, -- dropdown menus (nearly opaque)
     -- bar rows (EllesmereUI-style lists): near-black fill, slightly lighter at the left edge
-    listBg       = { 0.000, 0.000, 0.000, 0.35 }, -- behind bar rows (shows in the 2px gaps)
-    row          = { 0.043, 0.039, 0.035, 0.92 }, -- #0B0A09
-    rowLight     = { 0.090, 0.082, 0.074, 0.92 },
-    rowHeader    = { 0.060, 0.049, 0.039, 0.95 }, -- slot headers: warm accent-tinted
-    rowHeaderLight = { 0.150, 0.118, 0.088, 0.95 },
-    rowHover     = { 1.000, 1.000, 1.000, 0.05 },
+    -- Rows are see-through so the window backdrop and watermark show behind them.
+    listBg       = { 0.000, 0.000, 0.000, 0.08 }, -- list area backing (nearly transparent)
+    row          = { 0.043, 0.039, 0.035, 0.50 }, -- #0B0A09
+    rowLight     = { 0.100, 0.090, 0.080, 0.58 },
+    rowHeader    = { 0.060, 0.049, 0.039, 0.55 }, -- slot headers: warm accent-tinted
+    rowHeaderLight = { 0.170, 0.132, 0.096, 0.65 },
+    rowHover     = { 1.000, 1.000, 1.000, 0.06 },
+    vignette     = { 0.000, 0.000, 0.000, 0.50 }, -- window edge darkening
 }
 local C = Skin.C
 
@@ -69,6 +72,31 @@ end
 local function setTextColor(fs, key, alphaMul)
     local c = col(key)
     fs:SetTextColor(c[1], c[2], c[3], (c[4] or 1) * (alphaMul or 1))
+end
+
+-- Two-color gradient with feature detection: newer clients take ColorMixins (CreateColor),
+-- older ones SetGradientAlpha. orient "HORIZONTAL" goes left (min) -> right (max), "VERTICAL"
+-- bottom (min) -> top (max). Returns false when neither API works; then `fallback`
+-- (a color key) is applied flat, or the texture is hidden when there is no fallback.
+local function setGradient(tex, orient, minKey, maxKey, fallback)
+    local a, b = col(minKey), col(maxKey)
+    tex:SetColorTexture(1, 1, 1, 1)
+    if tex.SetGradient and CreateColor then
+        local ok = pcall(tex.SetGradient, tex, orient,
+            CreateColor(a[1], a[2], a[3], a[4] or 1), CreateColor(b[1], b[2], b[3], b[4] or 1))
+        if ok then return true end
+    end
+    if tex.SetGradientAlpha then
+        local ok = pcall(tex.SetGradientAlpha, tex, orient,
+            a[1], a[2], a[3], a[4] or 1, b[1], b[2], b[3], b[4] or 1)
+        if ok then return true end
+    end
+    if fallback then setTex(tex, fallback) else tex:Hide() end
+    return false
+end
+
+local function setGradientH(tex, leftKey, rightKey)
+    return setGradient(tex, "HORIZONTAL", leftKey, rightKey, rightKey)
 end
 
 function Skin:Hex(key)
@@ -177,7 +205,7 @@ end
 function Skin:Button(parent, text, width, height)
     local b = CreateFrame("Button", nil, parent, "BackdropTemplate")
     b:SetSize(width or 80, height or 20)
-    self:SetBackdrop(b, "button", "border")
+    self:SetBackdrop(b, "button", "edge")
 
     -- HIGHLIGHT layer textures show automatically while the mouse is over the button,
     -- so hover works even if the caller replaces OnEnter/OnLeave.
@@ -269,7 +297,7 @@ function Skin:EditBox(parent, width, numeric)
     setTextColor(eb, "text")
     eb:SetTextInsets(5, 5, 0, 0)
     if numeric then eb:SetNumeric(true) end
-    self:SetBackdrop(eb, "panel", "border")
+    self:SetBackdrop(eb, "panel", "edge")
 
     local ph = self:Text(eb, Skin.SIZE.normal, "textDim")
     ph:SetPoint("LEFT", 6, 0)
@@ -281,7 +309,7 @@ function Skin:EditBox(parent, width, numeric)
     local function update(self)
         local empty = (self:GetText() or "") == ""
         ph:SetShown(empty and not self:HasFocus() and (ph:GetText() or "") ~= "")
-        setBorder(self, self:HasFocus() and "borderStrong" or "border")
+        setBorder(self, self:HasFocus() and "accent" or "edge")
     end
     local function unfocus(self) self:ClearFocus() end
 
@@ -429,6 +457,87 @@ end
 ---------------------------------------------------------------------------
 local HEADER_H, PAD = 24, 6
 
+-- Window backdrop like EllesmereUI's options window: warm near-black base with a warm 1px
+-- edge, darkened edges (vignette, so the middle reads softly lighter) and an optional faint
+-- watermark emblem (f.watermark; the caller anchors and sizes it).
+-- opts = { vignette = 70 (band size px, false = none), watermark = texturePath, watermarkAlpha = 0.07 }
+function Skin:WindowBackdrop(f, opts)
+    opts = opts or {}
+    self:SetBackdrop(f, "bg", "edge")
+    local band = opts.vignette
+    if band == nil then band = 70 end
+    if band then
+        local clear = { 0, 0, 0, 0 }
+        -- { anchor1, anchor2, orientation, min color, max color, horizontal band? }
+        local bands = {
+            { "TOPLEFT", "TOPRIGHT", "VERTICAL", clear, "vignette" },              -- top (dark at top)
+            { "BOTTOMLEFT", "BOTTOMRIGHT", "VERTICAL", "vignette", clear },        -- bottom
+            { "TOPLEFT", "BOTTOMLEFT", "HORIZONTAL", "vignette", clear, true },    -- left
+            { "TOPRIGHT", "BOTTOMRIGHT", "HORIZONTAL", clear, "vignette", true },  -- right
+        }
+        local v = {}
+        for i, b in ipairs(bands) do
+            local t = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+            local x1 = b[1]:find("LEFT") and 1 or -1
+            local y1 = b[1]:find("TOP") and -1 or 1
+            local x2 = b[2]:find("LEFT") and 1 or -1
+            local y2 = b[2]:find("TOP") and -1 or 1
+            t:SetPoint(b[1], x1, y1)
+            t:SetPoint(b[2], x2, y2)
+            if b[6] then t:SetWidth(math.floor(band * 1.4)) else t:SetHeight(band) end
+            setGradient(t, b[3], b[4], b[5])  -- hidden when the client has no gradient API
+            v[i] = t
+        end
+        f.vignette = v
+    end
+    if opts.watermark then
+        local w = f:CreateTexture(nil, "BACKGROUND", nil, 2)
+        w:SetTexture(opts.watermark)
+        if w.SetDesaturated then w:SetDesaturated(true) end
+        w:SetAlpha(opts.watermarkAlpha or 0.07)
+        w:SetSize(220, 220)
+        w:SetPoint("CENTER")
+        f.watermark = w
+    end
+    return f
+end
+
+-- Flat text tab: dim label, brighter on hover, copper text + 2px copper underline when active.
+-- t:SetActive(on), t:IsActive(); width follows the label (+ padding).
+function Skin:Tab(parent, text, height)
+    local t = CreateFrame("Button", nil, parent)
+    t:SetHeight(height or 24)
+    t:RegisterForClicks("LeftButtonUp")
+    local fs = self:Text(t, Skin.SIZE.header, "textDim")
+    fs:SetPoint("CENTER", 0, 1)
+    fs:SetWordWrap(false)
+    t.text = fs
+    local bar = t:CreateTexture(nil, "ARTWORK")
+    bar:SetPoint("BOTTOMLEFT", 4, 0)
+    bar:SetPoint("BOTTOMRIGHT", -4, 0)
+    bar:SetHeight(2)
+    setTex(bar, "accent")
+    bar:Hide()
+    t.underline = bar
+    t.active, t.hovered = false, false
+    local function look(self)
+        setTextColor(fs, self.active and "accent" or (self.hovered and "text" or "textDim"))
+        bar:SetShown(self.active)
+    end
+    function t:SetText(s)
+        fs:SetText(s or "")
+        self:SetWidth(math.ceil(fs:GetStringWidth() or 0) + 24)
+    end
+    function t:GetText() return fs:GetText() end
+    function t:SetActive(on) self.active = on and true or false; look(self) end
+    function t:IsActive() return self.active end
+    t:SetScript("OnEnter", function(self) self.hovered = true; look(self) end)
+    t:SetScript("OnLeave", function(self) self.hovered = false; look(self) end)
+    t:SetText(text)
+    look(t)
+    return t
+end
+
 function Skin:CreateWindow(name, opts)
     opts = opts or {}
     local f = CreateFrame("Frame", name, UIParent, "BackdropTemplate")
@@ -442,37 +551,54 @@ function Skin:CreateWindow(name, opts)
     f:EnableMouse(true)
     -- Position is persisted by the addon (onMoved), not by the client's layout cache.
     if f.SetDontSavePosition then f:SetDontSavePosition(true) end
-    self:SetBackdrop(f, "bg", "border")
+    self:WindowBackdrop(f, { vignette = opts.vignette, watermark = opts.watermark,
+        watermarkAlpha = opts.watermarkAlpha })
 
+    -- opts (extras): headerHeight, titleSize, subtitle (dim line under the title; f.subtitle).
+    local headerH = opts.headerHeight or HEADER_H
     local header = CreateFrame("Frame", nil, f)
     header:SetPoint("TOPLEFT", 1, -1)
     header:SetPoint("TOPRIGHT", -1, -1)
-    header:SetHeight(HEADER_H)
+    header:SetHeight(headerH)
     header:EnableMouse(true)
     header:RegisterForDrag("LeftButton")
     local hbg = header:CreateTexture(nil, "BACKGROUND")
     hbg:SetAllPoints()
     setTex(hbg, "header")
-    local line = self:Divider(header, "border")
+    local line = self:Divider(header, "edge")
     line:SetPoint("BOTTOMLEFT")
     line:SetPoint("BOTTOMRIGHT")
+    line:SetAlpha(0.6)
     local mark = header:CreateTexture(nil, "ARTWORK")
-    mark:SetSize(2, 12)
+    mark:SetSize(2, math.min(headerH - 12, 22))
     mark:SetPoint("LEFT", 7, 0)
     setTex(mark, "accent")
     f.header = header
 
-    local title = self:Text(header, Skin.SIZE.header, "text")
-    title:SetPoint("LEFT", mark, "RIGHT", 6, 0)
+    local title = self:Text(header, opts.titleSize or Skin.SIZE.header, "text")
     title:SetWordWrap(false)
     title:SetText(opts.title or "")
     f.title = title
+    if opts.subtitle ~= nil then
+        title:SetPoint("BOTTOMLEFT", mark, "RIGHT", 6, 1)
+        local sub = self:Text(header, Skin.SIZE.small, "textDim")
+        sub:SetPoint("LEFT", mark, "RIGHT", 6, -8)  -- right edge: see the close button below
+        sub:SetWordWrap(false)
+        sub:SetText(opts.subtitle or "")
+        f.subtitle = sub
+    else
+        title:SetPoint("LEFT", mark, "RIGHT", 6, 0)
+    end
 
     local close = self:IconButton(header, "x", 18)
     close:SetPoint("RIGHT", -3, 0)
     close:SetScript("OnClick", function() f:Hide() end)
     f.closeButton = close
-    title:SetPoint("RIGHT", close, "LEFT", -6, 0)
+    if f.subtitle then
+        f.subtitle:SetPoint("RIGHT", close, "LEFT", -6, -8)
+    else
+        title:SetPoint("RIGHT", close, "LEFT", -6, 0)
+    end
 
     local content = CreateFrame("Frame", nil, f)
     content:SetPoint("TOPLEFT", header, "BOTTOMLEFT", PAD, -PAD)
@@ -855,22 +981,6 @@ end
 -- Bar rows (EllesmereUI-style list lines; used by the main list and the mini tracker)
 ---------------------------------------------------------------------------
 -- Horizontal gradient (left -> right) with feature detection; flat right color as fallback.
-local function setGradientH(tex, leftKey, rightKey)
-    local l, r = col(leftKey), col(rightKey)
-    tex:SetColorTexture(1, 1, 1, 1)
-    if tex.SetGradient and CreateColor then
-        local ok = pcall(tex.SetGradient, tex, "HORIZONTAL",
-            CreateColor(l[1], l[2], l[3], l[4] or 1), CreateColor(r[1], r[2], r[3], r[4] or 1))
-        if ok then return end
-    end
-    if tex.SetGradientAlpha then
-        local ok = pcall(tex.SetGradientAlpha, tex, "HORIZONTAL",
-            l[1], l[2], l[3], l[4] or 1, r[1], r[2], r[3], r[4] or 1)
-        if ok then return end
-    end
-    tex:SetColorTexture(r[1], r[2], r[3], r[4] or 1)
-end
-
 local BAR_Q_W = 3
 
 -- Decorates a Button of height `height` as a bar row:
@@ -1271,7 +1381,7 @@ function Skin:Dropdown(parent, width, opts)
     local dd = CreateFrame("Button", nil, parent, "BackdropTemplate")
     dd:SetSize(width or 120, DD_H)
     dd:RegisterForClicks("LeftButtonUp")
-    self:SetBackdrop(dd, "button", "border")
+    self:SetBackdrop(dd, "button", "edge")
     dd.opts = opts
     dd.hovered = false
 
@@ -1297,7 +1407,7 @@ function Skin:Dropdown(parent, width, opts)
     function dd:UpdateLook()
         local open = self:IsOpen()
         local on = isEnabled(self)
-        setBorder(self, open and "accent" or (self.hovered and on and "borderStrong" or "border"))
+        setBorder(self, open and "accent" or (self.hovered and on and "accent" or "edge"))
         for _, t in ipairs(self.arrow) do setTex(t, (open or self.hovered) and on and "accent" or "textDim") end
         setTextColor(self.text, on and "text" or "textDim", on and 1 or 0.6)
         self.icon:SetAlpha(on and 1 or 0.4)
