@@ -135,7 +135,7 @@ def main() -> int:
         # Local scan cleared (/gg scan reset): use the shipped items as the base so Questie-only and
         # source-only releases still work. Item fields can only change through a new scan.
         print("No local scan: using the items in the shipped Data.lua as the base.")
-        from update_db import apply_corrections
+        from update_db import apply_corrections, hide_by_source
         # The shipped items still pass through the build's exclusion rules, so a tightened filter
         # (e.g. new test-item name patterns) applies without a fresh scan.
         base = {iid: {k: v for k, v in rec.items() if k != "src"} for iid, rec in old.items()
@@ -152,6 +152,10 @@ def main() -> int:
             meta["questie"] = questie_version(questie)
             meta["credits"] = "Item sources include data from the Questie project's database (GPL-3.0)"
         apply_corrections(base, args.corrections)
+        hidden = hide_by_source(base, args.corrections)
+        if hidden:
+            print(f"Hidden by source (_hide_sources): {len(hidden)} items")
+            meta["hidden"] = hidden
         items = base
         meta["build"] = old_meta.get("build", meta.get("build"))
         meta["count"] = len(items)

@@ -222,7 +222,7 @@ function ns:BuildRecommendations()
         local item = self:GetItem(id)
         local groups = self:GroupsForItem(item, setup)
         local eff = ns.EffectiveLevel(item)
-        if groups and eff >= minL and eff <= maxL and self:IsUsable(item, ctx.class, level) then
+        if groups and eff >= minL and eff <= maxL and self:ShowsItem(id) and self:IsUsable(item, ctx.class, level) then
             local score = self:Score(item, weights, ctx)
             local statsOk, armorOk = self:IsSuitable(item, weights, ctx, score)
             -- Nothing to recommend about an item the spec gets no value from (stat-less relics,

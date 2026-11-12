@@ -330,6 +330,22 @@ def apply_corrections(items: dict[int, dict], path: Path = CORRECTIONS) -> int:
     return applied
 
 
+def hide_by_source(items: dict[int, dict], path: Path = CORRECTIONS) -> list[int]:
+    """Drops every item with a source named in corrections.json "_hide_sources" (e.g. a joke event
+    boss) and returns their IDs. The IDs ship in meta.hidden so the addon also hides them when a
+    player's own /gg scan still has them."""
+    if not path.exists():
+        return []
+    names = set(json.loads(path.read_text(encoding="utf-8")).get("_hide_sources") or [])
+    if not names:
+        return []
+    hidden = sorted(iid for iid, rec in items.items()
+                    if any(isinstance(s, dict) and s.get("n") in names for s in rec.get("src") or []))
+    for iid in hidden:
+        del items[iid]
+    return hidden
+
+
 # ---------------------------------------------------------------- Lua output
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 

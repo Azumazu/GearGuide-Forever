@@ -22,7 +22,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from update_db import apply_corrections, write_lua, CORRECTIONS  # noqa: E402  (shared helpers)
+from update_db import apply_corrections, hide_by_source, write_lua, CORRECTIONS  # noqa: E402  (shared helpers)
 
 DEFAULT_OUT = HERE.parent / "GearGuide" / "Data.lua"
 MAX_LEVEL = 60
@@ -264,9 +264,14 @@ def collect(saved: Path, corrections: Path = CORRECTIONS, include_learned: bool 
     fixed = apply_corrections(items, corrections)
     if fixed:
         print(f"Applied {fixed} corrections from {corrections.name}")
+    hidden = hide_by_source(items, corrections)
+    if hidden:
+        print(f"Hidden by source (_hide_sources): {len(hidden)} items")
     now = datetime.now(timezone.utc)
     meta = {"generated": now.strftime("%Y-%m-%d"), "source": "client",
             "build": str(harvest.get("build") or "?"), "count": len(items), "scanned": scanned}
+    if hidden:
+        meta["hidden"] = hidden
     if credits:
         meta["credits"] = credits
         meta["questie"] = questie_ver

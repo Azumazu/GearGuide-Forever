@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.6 (2026-11-12)
+
+Item database rebuilt from client build 70888: 11227 gear items.
+- Hidden: the Super Hogger event items (Thunderfury, Sulfuras, Rhok'delar, Band of Sulfuras), also
+  when your own /gg scan contains them
+- Items with an unknown source are now hidden from recommendations, the browser and the mini
+  tracker. Show them with the "Unknown sources" button in the window footer or /gg unknown.
+  Favorites always show
+
 ## 0.4.5 (2026-11-12)
 
 - Fix: the item tooltip on the mini tracker opened on top of the tracker when it sat near the

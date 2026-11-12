@@ -11,6 +11,7 @@ local defaults = {
     minimap = { angle = 225, hide = false },
     levelBehind = 5,  -- recommend items whose required level is up to this many levels below you
     levelAhead = 3,   -- ...and up to this many levels above you (things to aim for)
+    showUnknown = false,  -- list items nobody knows a source for (favorites always show)
     window = { w = 760, h = 480 },
     -- autoPopup: open the mini tracker when entering a zone/instance with recommended items
     mini = { shown = false, count = 10, hideCompleted = false, autoPopup = true },
@@ -151,6 +152,9 @@ end
 function ns:AllItemIds()
     if self.idCache then return self.idCache end
     local list, seen = {}, {}
+    -- Items the maintainer hid by source (corrections.json "_hide_sources", e.g. joke event loot):
+    -- they're gone from Data.lua, and this keeps a local scan from bringing them back.
+    for _, id in ipairs(GearGuide_Data.meta and GearGuide_Data.meta.hidden or {}) do seen[id] = true end
     for _, layer in ipairs({ GearGuideHarvest.items, GearGuide_Data.items, GearGuideLearned.items }) do
         for id in pairs(layer) do
             if not seen[id] then
@@ -204,6 +208,28 @@ function ns:GetSources(id)
     add(GearGuideLearned.sources[id])
     if ns.GetSharedSources then add(ns:GetSharedSources(id)) end  -- from other GearGuide users
     return out
+end
+
+-- Does anyone know where this item comes from? Cheap check (no resolving), any faction.
+function ns:HasSource(id)
+    local dbItem = GearGuide_Data.items[id]
+    if dbItem and dbItem.src and dbItem.src[1] ~= nil then return true end
+    local learned = GearGuideLearned.sources[id]
+    if learned and learned[1] ~= nil then return true end
+    local shared = GearGuideLearned.shared and GearGuideLearned.shared[id]  -- raw: no copy per call
+    return shared ~= nil and shared[1] ~= nil
+end
+
+-- Lists (recommendations, browser, mini tracker) leave out items without a known source unless
+-- the player turned them on. Favorites always stay: the player picked them on purpose.
+function ns:ShowsItem(id)
+    return GearGuideDB.showUnknown or self:HasSource(id) or (self.IsFavorite and self:IsFavorite(id)) or false
+end
+
+function ns:SetShowUnknown(on)
+    GearGuideDB.showUnknown = on and true or false
+    ns.Print(on and "Showing items with an unknown source." or "Hiding items with an unknown source (favorites still show).")
+    self:RequestRefresh()
 end
 
 local SOURCE_LABELS = { drop = "Drop", quest = "Quest", vendor = "Vendor", craft = "Crafted",
@@ -611,6 +637,10 @@ SlashCmdList.GEARGUIDE = function(msg)
         else
             ns:ToggleMini()
         end
+    elseif cmd == "unknown" then
+        local want = rest:lower()
+        if want == "on" or want == "off" then ns:SetShowUnknown(want == "on")
+        else ns:SetShowUnknown(not GearGuideDB.showUnknown) end
     elseif cmd == "sharing" then
         local want = rest:lower()
         if want == "on" or want == "off" then ns:SetSharing(want == "on")
@@ -670,6 +700,6 @@ SlashCmdList.GEARGUIDE = function(msg)
         ns.Print("Forgot all items and sources learned in game.")
     else
         ns.Print("Commands: /gg (toggle window), /gg browse, /gg rec, /gg mini [count], /gg minimap, "
-            .. "/gg spec [name], /gg range <below> <above>, /gg sharing [on|off], /gg ej, /gg scan [pause|status|reset|full|extend], /gg status, /gg unmark, /gg forget")
+            .. "/gg spec [name], /gg range <below> <above>, /gg sharing [on|off], /gg unknown [on|off], /gg ej, /gg scan [pause|status|reset|full|extend], /gg status, /gg unmark, /gg forget")
     end
 end

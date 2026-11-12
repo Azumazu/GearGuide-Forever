@@ -581,7 +581,7 @@ local function buildBrowserRows()
     for _, id in ipairs(ids) do
         local item = ns:GetItem(id)
         local group = item and ns.EQUIPLOC_GROUP[item.eq]
-        if group and (not groupKey or group == groupKey) and (item.q or 1) >= minQ then
+        if group and (not groupKey or group == groupKey) and (item.q or 1) >= minQ and ns:ShowsItem(id) then
             local eff = ns.EffectiveLevel(item)
             if (not minL or eff >= minL) and (not maxL or eff <= maxL)
                 and (text == "" or (item.n and item.n:lower():find(text, 1, true)))
@@ -926,6 +926,11 @@ local function updateStatus()
         local on = ns.IsSharingEnabled and ns:IsSharingEnabled()
         W.shareBtn:SetText(on and "Sharing: On" or "Sharing: Off")
         if W.shareBtn.SetActive then W.shareBtn:SetActive(on) end
+    end
+    if W.unknownBtn then
+        local shown = GearGuideDB.showUnknown
+        W.unknownBtn:SetText(shown and "Unknown sources: Shown" or "Unknown sources: Hidden")
+        if W.unknownBtn.SetActive then W.unknownBtn:SetActive(shown) end
     end
 end
 
@@ -1443,9 +1448,25 @@ local function createWindow()
         GameTooltip:Show()
     end)
     W.shareBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
+
+    -- Items nobody knows a source for: hidden by default (Core.lua ns:ShowsItem).
+    W.unknownBtn = Skin:Button(content, "Unknown sources: Hidden", 150, Skin.CONTROL_H)
+    W.unknownBtn:SetPoint("RIGHT", W.shareBtn, "LEFT", -Skin.GAP, 0)
+    W.unknownBtn:SetScript("OnClick", function() ns:SetShowUnknown(not GearGuideDB.showUnknown) end)
+    W.unknownBtn:HookScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
+        GameTooltip:AddLine("Items with an unknown source")
+        GameTooltip:AddLine("Items nobody has found a source for yet (no known drop, quest, vendor or recipe). "
+            .. "Hidden from recommendations, the browser and the mini tracker unless shown here. "
+            .. "Favorites always show. Looting or buying an item teaches GearGuide its source.", 1, 1, 1, true)
+        GameTooltip:AddLine("Click to " .. (GearGuideDB.showUnknown and "hide" or "show") .. " them.", 0.4, 1, 0.6)
+        GameTooltip:Show()
+    end)
+    W.unknownBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
+
     W.status = Skin:Text(content, Skin.SIZE.small, "textDim")
     W.status:SetPoint("LEFT", content, "BOTTOMLEFT", 2, FOOTER_H / 2)
-    W.status:SetPoint("RIGHT", W.shareBtn, "LEFT", -Skin.GAP - 4, 0)
+    W.status:SetPoint("RIGHT", W.unknownBtn, "LEFT", -Skin.GAP - 4, 0)
     W.status:SetWordWrap(false)
 
     createDetail(content)
