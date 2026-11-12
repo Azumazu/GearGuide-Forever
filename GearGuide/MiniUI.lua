@@ -81,7 +81,7 @@ end
 local function rowOnEnter(row)
     if not row.pick then return end
     ns:ShowItemTooltip(row, row.pick.id, {
-        score = row.pick.score, delta = row.pick.delta, anchor = "ANCHOR_LEFT",
+        score = row.pick.score, delta = row.pick.delta, beside = frame,  -- outside the tracker, never over it
     })
     local src = row.pick.zoneSource
     if type(src) == "table" and GameTooltip:IsOwned(row) then

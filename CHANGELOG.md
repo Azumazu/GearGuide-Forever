@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.5 (2026-11-12)
+
+- Fix: the item tooltip on the mini tracker opened on top of the tracker when it sat near the
+  left screen edge; it now opens beside the tracker, on whichever side has room
+
 ## 0.4.4 (2026-11-12)
 
 Item database rebuilt from client build 70888: 11231 gear items.

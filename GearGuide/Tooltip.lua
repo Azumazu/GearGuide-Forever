@@ -28,7 +28,24 @@ tipEvents:SetScript("OnEvent", function(_, _, itemID)
     end
 end)
 
--- info (optional): { score = n, delta = n, class = "MAGE", anchor = "ANCHOR_RIGHT" }
+-- Puts the tooltip just outside `outer` (e.g. the whole mini tracker), level with `owner`'s top,
+-- on whichever side of the screen has more room. A plain ANCHOR_LEFT/RIGHT on a row near the
+-- screen edge gets pushed back on screen by the client, right over the frame it describes.
+local function anchorBeside(tip, owner, outer)
+    tip:SetOwner(owner, "ANCHOR_NONE")
+    tip:ClearAllPoints()
+    local scale = outer:GetEffectiveScale() / UIParent:GetEffectiveScale()
+    local cx = (outer:GetCenter() or 0) * scale
+    local gap = 4
+    if cx < UIParent:GetWidth() / 2 then
+        tip:SetPoint("TOPLEFT", owner, "TOPRIGHT", (outer:GetRight() or 0) - (owner:GetRight() or 0) + gap, 0)
+    else
+        tip:SetPoint("TOPRIGHT", owner, "TOPLEFT", (outer:GetLeft() or 0) - (owner:GetLeft() or 0) - gap, 0)
+    end
+end
+
+-- info (optional): { score = n, delta = n, class = "MAGE", anchor = "ANCHOR_RIGHT",
+--                    beside = frame (place the tooltip outside this frame instead of using anchor) }
 function ns:ShowItemTooltip(owner, id, info)
     info = info or {}
     pendingTip = nil
@@ -37,7 +54,11 @@ function ns:ShowItemTooltip(owner, id, info)
         pendingTip = { owner = owner, id = id, info = info }
     end
     local tip = GameTooltip
-    tip:SetOwner(owner, info.anchor or "ANCHOR_RIGHT")
+    if info.beside then
+        anchorBeside(tip, owner, info.beside)
+    else
+        tip:SetOwner(owner, info.anchor or "ANCHOR_RIGHT")
+    end
     tip:SetHyperlink("item:" .. id)
     tip:AddLine(" ")
 
