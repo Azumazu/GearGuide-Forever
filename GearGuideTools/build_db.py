@@ -15,6 +15,7 @@ Log out (or /reload) first so WoW writes the saved variables to disk.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +25,9 @@ sys.path.insert(0, str(HERE))
 from update_db import apply_corrections, write_lua, CORRECTIONS  # noqa: E402  (shared helpers)
 
 DEFAULT_OUT = HERE.parent / "GearGuide" / "Data.lua"
+MAX_LEVEL = 60
+# Items in the client's table that players never get: NPC weapons, test, placeholder and retired items.
+EXCLUDE_NAME = re.compile(r"^Monster - |^zz|^OLD|^(?:Test|TEST)\b|Deprecated|DEPRECATED|\[PH\]|\(OLD\)|\bOLD\b|UNUSED|Unused|\bQA\b|DEBUG")
 KEEP_FIELDS = ("n", "q", "il", "rl", "eq", "c", "sc", "st", "cls", "u")
 
 
@@ -197,8 +201,21 @@ HEADER = [
 ]
 
 
+def excluded(rec: dict, keep_poor: bool = False) -> str | None:
+    """Reason an item is left out of the shipped database, or None to keep it."""
+    if EXCLUDE_NAME.search(rec.get("n") or ""):
+        return "test/NPC/retired item"
+    if (rec.get("rl") or 0) > MAX_LEVEL:
+        return f"requires level above {MAX_LEVEL}"
+    if (rec.get("q") or 0) >= 6:
+        return "artifact/internal quality"
+    if rec.get("q") == 0 and not keep_poor:
+        return "poor (gray) quality"
+    return None
+
+
 def collect(saved: Path, corrections: Path = CORRECTIONS, include_learned: bool = True,
-            questie: Path | None = None):
+            questie: Path | None = None, keep_poor: bool = False):
     """Reads a SavedVariables file -> (items, meta, scan_state). Shared by build_db and release."""
     data = LuaTableParser(saved.read_text(encoding="utf-8", errors="replace")).assignments()
     harvest = data.get("GearGuideHarvest") or {}
@@ -207,10 +224,18 @@ def collect(saved: Path, corrections: Path = CORRECTIONS, include_learned: bool 
     for iid, rec in as_dict(harvest.get("items")).items():
         if isinstance(rec, dict) and rec.get("eq"):
             items[int(iid)] = {k: rec[k] for k in KEEP_FIELDS if rec.get(k) not in (None, {}, [])}
+    dropped = {}
+    for iid in list(items):
+        reason = excluded(items[iid], keep_poor)
+        if reason:
+            dropped[reason] = dropped.get(reason, 0) + 1
+            del items[iid]
+    if dropped:
+        print("Left out: " + ", ".join(f"{n} {r}" for r, n in sorted(dropped.items(), key=lambda x: -x[1])))
     scanned = len(items)
     if include_learned:
         for iid, rec in as_dict(learned.get("items")).items():
-            if isinstance(rec, dict) and rec.get("eq") and int(iid) not in items:
+            if isinstance(rec, dict) and rec.get("eq") and int(iid) not in items and not excluded(rec, keep_poor):
                 items[int(iid)] = {k: rec[k] for k in KEEP_FIELDS if rec.get(k) not in (None, {}, [])}
         for iid, srcs in as_dict(learned.get("sources")).items():
             if int(iid) in items and isinstance(srcs, list) and srcs:
@@ -242,12 +267,13 @@ def main() -> int:
     p.add_argument("--out", type=Path, default=DEFAULT_OUT)
     p.add_argument("--corrections", type=Path, default=CORRECTIONS, help="hand-written fixes (JSON)")
     p.add_argument("--questie", type=Path, help="add sources from Questie's Forever database (QuestieDB folder or game folder)")
+    p.add_argument("--keep-poor", action="store_true", help="keep gray (poor quality) items")
     p.add_argument("--no-learned", action="store_true", help="skip items/sources learned from loot, quests, vendors")
     args = p.parse_args()
 
     saved = args.saved or find_saved_variables(args.wow)
     print(f"Reading {saved}")
-    items, meta, _ = collect(saved, args.corrections, not args.no_learned, args.questie or default_questie(args.wow))
+    items, meta, _ = collect(saved, args.corrections, not args.no_learned, args.questie or default_questie(args.wow), args.keep_poor)
     if not items:
         print("No scanned items found. Run /gg scan in game and let it finish, then log out.", file=sys.stderr)
         return 1

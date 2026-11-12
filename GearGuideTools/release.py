@@ -115,6 +115,7 @@ def main() -> int:
     p.add_argument("--corrections", type=Path, default=CORRECTIONS)
     p.add_argument("--questie", type=Path, help="QuestieDB folder for item sources (default: the one in --wow)")
     p.add_argument("--no-questie", action="store_true")
+    p.add_argument("--keep-poor", action="store_true", help="keep gray (poor quality) items")
     p.add_argument("--sources", action="store_true", help="release even if only new sources were learned")
     p.add_argument("--force", action="store_true", help="release even if the scan is unfinished or nothing changed")
     p.add_argument("--dry-run", action="store_true", help="show the comparison, change nothing")
@@ -123,7 +124,7 @@ def main() -> int:
     saved = args.saved or find_saved_variables(args.wow)
     print(f"Reading scan from {saved}")
     questie = None if args.no_questie else (args.questie or default_questie(args.wow))
-    items, meta, scan = collect(saved, args.corrections, questie=questie)
+    items, meta, scan = collect(saved, args.corrections, questie=questie, keep_poor=args.keep_poor)
     old, old_meta = read_shipped(DATA)
     if meta.get("scanned", 0) == 0 and old:
         # Local scan cleared (/gg scan reset): use the shipped items as the base so Questie-only and
@@ -186,20 +187,25 @@ def main() -> int:
     write_lua(DATA, items, meta, header=HEADER)
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    lines = [f"## {version} ({today})", "",
-             f"Item database rebuilt from client build {meta['build']}: {len(items)} gear items."
-             if item_changes else f"Item sources refreshed ({len(items)} gear items, client build {meta['build']})."]
-    if added:
-        lines.append(f"- Added {len(added)}: {names(added, items)}")
-    if removed:
-        lines.append(f"- Removed {len(removed)}: {names(removed, old)}")
-    if changed:
-        lines.append(f"- Changed {len(changed)}: {names([i for i, _ in changed], items)}")
-    if questie_updated and (sources_changed or new_sources):
-        lines.append(f"- Item sources updated from QuestieDB {questie_now} "
-                     f"({len(sources_changed)} items changed)")
-    if new_sources:
-        lines.append(f"- {new_sources} new item sources")
+    lines = [f"## {version} ({today})", ""]
+    if not old:
+        lines.append(f"Initial item database from client build {meta['build']}: {len(items)} gear items, "
+                     f"{sum(1 for r in items.values() if r.get('src'))} with known sources.")
+        if questie_now:
+            lines.append(f"- Item sources include QuestieDB {questie_now}")
+    else:
+        lines.append(f"Item database rebuilt from client build {meta['build']}: {len(items)} gear items."
+                     if item_changes else f"Item sources refreshed ({len(items)} gear items, client build {meta['build']}).")
+        if added:
+            lines.append(f"- Added {len(added)}: {names(added, items)}")
+        if removed:
+            lines.append(f"- Removed {len(removed)}: {names(removed, old)}")
+        if changed:
+            lines.append(f"- Changed {len(changed)}: {names([i for i, _ in changed], items)}")
+        if questie_updated and (sources_changed or new_sources):
+            lines.append(f"- Item sources updated from QuestieDB {questie_now} ({len(sources_changed)} items changed)")
+        if new_sources:
+            lines.append(f"- {new_sources} new item sources")
     entry = "\n".join(lines) + "\n\n"
     previous = CHANGELOG.read_text(encoding="utf-8") if CHANGELOG.exists() else "# Changelog\n\n"
     head, _, rest = previous.partition("\n\n")
