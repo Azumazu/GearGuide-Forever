@@ -35,7 +35,7 @@ function ns:CreateMinimapButton()
     bg:SetPoint("TOPLEFT", 7, -5)
 
     local icon = button:CreateTexture(nil, "ARTWORK")
-    icon:SetTexture("Interface\\Icons\\INV_Chest_Chain_05")
+    icon:SetTexture("Interface\\AddOns\\GearGuide\\Media\\icon")  -- GearGuide logo (Media/icon.tga)
     icon:SetSize(17, 17)
     icon:SetPoint("TOPLEFT", 7, -6)
     icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
