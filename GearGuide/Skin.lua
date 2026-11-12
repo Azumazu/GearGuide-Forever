@@ -965,6 +965,28 @@ function Skin:BarRow(row, height)
         for i = 1, 4 do outline[i]:SetShown(on) end
     end
 
+    -- Shifts the whole bar (background, quality bar, icon, highlight, selection) right by `px`,
+    -- e.g. to nest item rows under a group header. Text columns read row.barIndent.
+    function row:SetBarIndent(px)
+        px = px or 0
+        if self.barIndent == px then return end
+        self.barIndent = px
+        for _, t in ipairs({ bg, sel, hl }) do
+            t:ClearAllPoints()
+            t:SetPoint("TOPLEFT", self, "TOPLEFT", px, 0)
+            t:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, 0)
+        end
+        q:ClearAllPoints()
+        q:SetPoint("TOPLEFT", self, "TOPLEFT", px, 0)
+        q:SetPoint("BOTTOMLEFT", self, "BOTTOMLEFT", px, 0)
+        icon:ClearAllPoints()
+        icon:SetPoint("TOPLEFT", self, "TOPLEFT", px + BAR_Q_W + 1, 0)
+        outline[1]:ClearAllPoints(); outline[1]:SetPoint("TOPLEFT", px, 0); outline[1]:SetPoint("TOPRIGHT")
+        outline[2]:ClearAllPoints(); outline[2]:SetPoint("BOTTOMLEFT", px, 0); outline[2]:SetPoint("BOTTOMRIGHT")
+        outline[4]:ClearAllPoints()
+        outline[4]:SetPoint("TOPLEFT", px + BAR_Q_W, 0); outline[4]:SetPoint("BOTTOMLEFT", px + BAR_Q_W, 0)
+    end
+
     function row:SetBarDimmed(on)
         if icon.SetDesaturated then icon:SetDesaturated(on and true or false) end
         icon:SetAlpha(on and 0.45 or 1)

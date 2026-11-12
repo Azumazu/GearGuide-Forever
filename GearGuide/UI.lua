@@ -267,13 +267,14 @@ local function applyColumns(r, w)
     if showSource then
         sourceW = math.max(SOURCE_MIN, math.min(SOURCE_MAX, math.floor(avail * 0.45), avail - NAME_MIN))
     end
-    local key = (showSlot and 1 or 0) + (showSource and 2 or 0) + sourceW * 4
+    local indent = type(r.barIndent) == "number" and r.barIndent or 0  -- column header has no bar
+    local key = (showSlot and 1 or 0) + (showSource and 2 or 0) + sourceW * 4 + indent * 100000
     if r.colKey ~= key then
         r.colKey = key
         r.source:SetWidth(math.max(1, sourceW))
         local anchor = (showSource and r.source) or (showSlot and r.slot) or r.lvl
         r.name:ClearAllPoints()
-        r.name:SetPoint("LEFT", r, "LEFT", r.nameX, 0)
+        r.name:SetPoint("LEFT", r, "LEFT", r.nameX + indent, 0)
         r.name:SetPoint("RIGHT", anchor, "LEFT", -GAP, 0)
     end
     local itemCols = (r.kind == "item" or r.kind == "colheader")
@@ -368,8 +369,13 @@ local function setRowDone(row, done)
     row.slot:SetAlpha(a); row.lvl:SetAlpha(a); row.score:SetAlpha(a); row.source:SetAlpha(a)
 end
 
+local ITEM_INDENT = 18  -- Recommended tab: items sit indented under their slot / Favorites header
+
 local function fillRow(row, d)
     row.kind = d.kind
+    if row.SetBarIndent then
+        row:SetBarIndent((d.kind == "item" and state.tab == "recommended") and ITEM_INDENT or 0)
+    end
     applyColumns(row, row:GetWidth())
     row.flash:SetAlpha(0)
     row.star:SetShown(d.kind == "item")
