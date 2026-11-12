@@ -26,7 +26,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from build_db import HEADER, LuaTableParser, collect, default_questie, find_saved_variables  # noqa: E402
+from build_db import HEADER, LuaTableParser, collect, default_questie, excluded, find_saved_variables  # noqa: E402
 from update_db import CORRECTIONS, write_lua  # noqa: E402
 import package  # noqa: E402
 
@@ -136,7 +136,10 @@ def main() -> int:
         # source-only releases still work. Item fields can only change through a new scan.
         print("No local scan: using the items in the shipped Data.lua as the base.")
         from update_db import apply_corrections
-        base = {iid: {k: v for k, v in rec.items() if k != "src"} for iid, rec in old.items()}
+        # The shipped items still pass through the build's exclusion rules, so a tightened filter
+        # (e.g. new test-item name patterns) applies without a fresh scan.
+        base = {iid: {k: v for k, v in rec.items() if k != "src"} for iid, rec in old.items()
+                if not excluded(rec, args.keep_poor)}
         for iid, rec in items.items():  # learned items/sources from the saved variables
             if iid in base:
                 if rec.get("src"):

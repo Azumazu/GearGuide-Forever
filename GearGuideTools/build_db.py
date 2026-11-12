@@ -28,7 +28,7 @@ DEFAULT_OUT = HERE.parent / "GearGuide" / "Data.lua"
 MAX_LEVEL = 60
 MIN_SHARED_REPORTS = 2  # sources from other players need this many independent reports to ship
 # Items in the client's table that players never get: NPC weapons, test, placeholder and retired items.
-EXCLUDE_NAME = re.compile(r"^Monster - |^zz|^OLD|^(?:Test|TEST)\b|Deprecated|DEPRECATED|\[PH\]|\(OLD\)|\bOLD\b|UNUSED|Unused|\bQA\b|DEBUG")
+EXCLUDE_NAME = re.compile(r"^Monster - |^zz|^OLD|(?i:\btest(?:ing)?\b|qatest)|DELETE ME|Deprecated|DEPRECATED|\[PH\]|\(OLD\)|\bOLD\b|UNUSED|Unused|\bQA\b|DEBUG")
 KEEP_FIELDS = ("n", "q", "il", "rl", "eq", "c", "sc", "st", "cls", "u", "r")  # r = random enchantment
 
 

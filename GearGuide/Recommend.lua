@@ -205,7 +205,7 @@ function ns:IsSuitable(item, weights, ctx, score)
     local armorOk = true
     local sc = item.sc or 0
     if item.c == ns.ITEM_CLASS_ARMOR and sc >= 1 and sc <= 4 and item.eq ~= "INVTYPE_CLOAK" then
-        armorOk = sc == self:ArmorMax(ctx.class, math.max(ctx.level, item.rl or 0))
+        armorOk = sc == self:ArmorMax(ctx.class, math.max(ctx.level, ns.EffectiveLevel(item)))
     end
     return statsOk, armorOk
 end
@@ -225,7 +225,9 @@ function ns:BuildRecommendations()
         if groups and eff >= minL and eff <= maxL and self:IsUsable(item, ctx.class, level) then
             local score = self:Score(item, weights, ctx)
             local statsOk, armorOk = self:IsSuitable(item, weights, ctx, score)
-            if statsOk then
+            -- Nothing to recommend about an item the spec gets no value from (stat-less relics,
+            -- placeholder armor): it would only crowd out real picks with "0.0".
+            if statsOk and score > 0 then
                 for _, group in ipairs(groups) do
                     local list = buckets[group]
                     if not list then list = {}; buckets[group] = list end

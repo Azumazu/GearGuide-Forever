@@ -130,12 +130,34 @@ function ns:GetItem(id)
     return GearGuideHarvest.items[id] or GearGuide_Data.items[id] or GearGuideLearned.items[id]
 end
 
+-- Same rules as GearGuideTools/build_db.py excluded(), so a local /gg scan (which keeps whatever
+-- the client knows) doesn't bring back developer test items the shipped database leaves out.
+-- %f[...] is Lua 5.1's word-boundary ("frontier") pattern.
+local JUNK_PATTERNS = { "^Monster %- ", "^zz", "^OLD", "%f[%a]OLD%f[%A]", "%(OLD%)", "Deprecated", "DEPRECATED",
+    "%[PH%]", "UNUSED", "Unused", "%f[%a]QA%f[%A]", "DEBUG", "DELETE ME" }
+function ns.IsJunkItem(item)
+    local name = item.n or ""
+    for _, pat in ipairs(JUNK_PATTERNS) do
+        if name:find(pat) then return true end
+    end
+    local lower = name:lower()
+    if lower:find("%f[%a]test%f[%A]") or lower:find("%f[%a]testing%f[%A]") or lower:find("qatest", 1, true) then
+        return true  -- "Testament of Hope" is real and stays
+    end
+    if (item.rl or 0) > 60 or (item.q or 0) >= 6 then return true end  -- above WoW: Forever's cap; internal quality
+    return false
+end
+
 function ns:AllItemIds()
     if self.idCache then return self.idCache end
     local list, seen = {}, {}
     for _, layer in ipairs({ GearGuideHarvest.items, GearGuide_Data.items, GearGuideLearned.items }) do
         for id in pairs(layer) do
-            if not seen[id] then seen[id] = true; list[#list + 1] = id end
+            if not seen[id] then
+                seen[id] = true
+                -- Judge by the record GetItem returns (newest layer wins).
+                if not ns.IsJunkItem(self:GetItem(id)) then list[#list + 1] = id end
+            end
         end
     end
     self.idCache = list
@@ -422,7 +444,9 @@ end
 
 -- Required level, falling back to an estimate from item level for items with no requirement.
 function ns.EffectiveLevel(item)
-    if item.rl and item.rl > 0 then return item.rl end
+    -- "Requires level 1" just means no requirement (common on vanilla quest rewards, Forever event
+    -- loot): estimate from item level instead, since stated requirements are always item level - 5.
+    if item.rl and item.rl > 1 then return item.rl end
     return math.max(1, (item.il or 1) - 5)
 end
 

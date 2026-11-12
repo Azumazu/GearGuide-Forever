@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.4 (2026-11-12)
+
+Item database rebuilt from client build 70888: 11231 gear items.
+- Removed 116 developer test items (AHNQIRAJ TEST ITEM, "(Test)" gear, QATest rings, ...); they are
+  also hidden if your own /gg scan picked them up
+- Fix: new characters were recommended high-level gear. Items without a level requirement (many
+  quest rewards and WoW: Forever drops) now count at their item level - 5, like every other item
+- Fix: items worth nothing to your spec (score 0, e.g. stat-less relics) are no longer recommended
+
 ## 0.4.3 (2026-11-12)
 
 Item sources refreshed (11347 gear items, client build 70888).
