@@ -26,6 +26,7 @@ from update_db import apply_corrections, write_lua, CORRECTIONS  # noqa: E402  (
 
 DEFAULT_OUT = HERE.parent / "GearGuide" / "Data.lua"
 MAX_LEVEL = 60
+MIN_SHARED_REPORTS = 2  # sources from other players need this many independent reports to ship
 # Items in the client's table that players never get: NPC weapons, test, placeholder and retired items.
 EXCLUDE_NAME = re.compile(r"^Monster - |^zz|^OLD|^(?:Test|TEST)\b|Deprecated|DEPRECATED|\[PH\]|\(OLD\)|\bOLD\b|UNUSED|Unused|\bQA\b|DEBUG")
 KEEP_FIELDS = ("n", "q", "il", "rl", "eq", "c", "sc", "st", "cls", "u")
@@ -240,6 +241,19 @@ def collect(saved: Path, corrections: Path = CORRECTIONS, include_learned: bool 
         for iid, srcs in as_dict(learned.get("sources")).items():
             if int(iid) in items and isinstance(srcs, list) and srcs:
                 items[int(iid)]["src"] = [s for s in srcs if isinstance(s, dict)]
+        # Sources heard from other GearGuide users: only those reported by 2+ different players ship.
+        trusted = 0
+        for iid, srcs in as_dict(learned.get("shared")).items():
+            if int(iid) not in items or not isinstance(srcs, list):
+                continue
+            have = items[int(iid)].setdefault("src", [])
+            seen = {(s.get("t"), s.get("n")) for s in have}
+            for s in srcs:
+                if isinstance(s, dict) and (s.get("c") or 0) >= MIN_SHARED_REPORTS and (s.get("t"), s.get("n")) not in seen:
+                    have.append({k: s[k] for k in ("t", "n", "z") if s.get(k) is not None})
+                    trusted += 1
+        if trusted:
+            print(f"Shared sources from players (reported 2+ times): {trusted}")
     credits = None
     if questie:
         from import_questie import merge_sources, questie_version

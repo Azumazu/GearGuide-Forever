@@ -157,6 +157,7 @@ function ns:GetSources(id)
         add(resolved)
     end
     add(GearGuideLearned.sources[id])
+    if ns.GetSharedSources then add(ns:GetSharedSources(id)) end  -- from other GearGuide users
     return out
 end
 
@@ -177,6 +178,7 @@ function ns.FormatSource(s)
     local text = (SOURCE_LABELS[s.t] or s.t or "?") .. ": " .. (s.n or "?")
     local zone = ns.ZoneName(s.z)
     if zone and zone ~= "" then text = text .. " (" .. zone .. ")" end
+    if s.shared then text = text .. " |cff888888(shared by players)|r" end
     return text
 end
 
@@ -453,6 +455,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
         ns:EnableLearning()
         ns:StartTracking()
         ns:InitHarvest()
+        ns:StartComm()
         if GearGuideDB.mini.shown then ns:ShowMini() end
         ns:CheckDatabaseBuild()
         if ns.dbTooNew then
@@ -486,6 +489,10 @@ SlashCmdList.GEARGUIDE = function(msg)
     elseif cmd == "mini" then
         local n = tonumber(rest)
         if n then ns:SetMiniCount(n) else ns:ToggleMini() end
+    elseif cmd == "sharing" then
+        local want = rest:lower()
+        if want == "on" or want == "off" then ns:SetSharing(want == "on")
+        else ns:SetSharing(not ns:IsSharingEnabled()) end
     elseif cmd == "dev" then
         GearGuideDB.maintainer = not GearGuideDB.maintainer
         GearGuideDB.notifiedBuild = nil
@@ -541,6 +548,6 @@ SlashCmdList.GEARGUIDE = function(msg)
         ns.Print("Forgot all items and sources learned in game.")
     else
         ns.Print("Commands: /gg (toggle window), /gg browse, /gg rec, /gg mini [count], /gg minimap, "
-            .. "/gg spec [name], /gg range <below> <above>, /gg ej, /gg scan [pause|status|reset|full|extend], /gg status, /gg unmark, /gg forget")
+            .. "/gg spec [name], /gg range <below> <above>, /gg sharing [on|off], /gg ej, /gg scan [pause|status|reset|full|extend], /gg status, /gg unmark, /gg forget")
     end
 end

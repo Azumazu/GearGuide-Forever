@@ -14,9 +14,13 @@ local function addSource(id, src)
         GearGuideLearned.sources[id] = list
     end
     for _, s in ipairs(list) do
-        if s.t == src.t and s.n == src.n and s.z == src.z then return end
+        if s.t == src.t and s.n == src.n and s.z == src.z then return false end
     end
-    if #list < MAX_SOURCES_PER_ITEM then list[#list + 1] = src end
+    if #list < MAX_SOURCES_PER_ITEM then
+        list[#list + 1] = src
+        return true
+    end
+    return false
 end
 
 function ns:LearnLink(link, src)
@@ -33,7 +37,9 @@ function ns:LearnLink(link, src)
         GearGuideLearned.items[id] = item
         self:InvalidateItems()
     end
-    if src then addSource(id, src) end
+    if src and addSource(id, src) and ns.QueueShare then
+        ns:QueueShare(id, src)  -- share first-time sightings (unless the player opted out)
+    end
 end
 
 local function zone()

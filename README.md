@@ -80,8 +80,18 @@ the changelog. A Questie update that doesn't touch our items releases nothing.
 
 Wowhead or other sites are not scraped. Their terms, and Blizzard's, forbid it.
 
+## Source sharing (in game)
+GearGuide users in the same guild or group share item sources they discover (which creature,
+quest, vendor or profession gives an item) through invisible addon messages: nothing appears in
+chat. Only item IDs, source type, the creature/quest/vendor name and zone are sent; no character
+data. Messages are batched (at most one every 10 seconds), only for first-time discoveries, and
+paused in combat and instances. Received sources show in tooltips as "(shared by players)".
+Releases only include shared sources that two or more different players reported.
+**Opt out** with the "Sharing" button at the bottom of the window or `/gg sharing off`; that stops
+both sending and receiving.
+
 ## Privacy
-GearGuide collects no personal data and sends nothing anywhere. Everything it stores stays on
+GearGuide collects no personal data. Apart from the optional in-game source sharing above (item and source names only), it sends nothing anywhere. Everything it stores stays on
 your computer in WoW's SavedVariables: settings, items learned in game, and which items your
 character has owned. Item data from the Blizzard API is game data provided "as is", and is used
 only to show gear information to you.

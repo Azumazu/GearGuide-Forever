@@ -790,6 +790,11 @@ local function updateStatus()
     parts[#parts + 1] = string.format("learned in game: %d", learned)
     if db == 0 and scanned == 0 then parts[#parts + 1] = "type /gg scan to build the database" end
     W.status:SetText(table.concat(parts, DOT))
+    if W.shareBtn then
+        local on = ns.IsSharingEnabled and ns:IsSharingEnabled()
+        W.shareBtn:SetText(on and "Sharing: On" or "Sharing: Off")
+        if W.shareBtn.SetActive then W.shareBtn:SetActive(on) end
+    end
 end
 
 local function updateHeader()
@@ -1234,8 +1239,22 @@ local function createWindow()
     local content = frame.content
 
     -- Footer
+    -- Opt-out for in-game source sharing (Comm.lua)
+    W.shareBtn = Skin:Button(content, "", 96, 14)
+    W.shareBtn:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -12, 0)
+    W.shareBtn:SetScript("OnClick", function() ns:SetSharing(not ns:IsSharingEnabled()) end)
+    W.shareBtn:HookScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
+        GameTooltip:AddLine("Source sharing")
+        GameTooltip:AddLine("Shares item sources you discover (which creature, quest or vendor gives an item) "
+            .. "with GearGuide users in your guild and group, and receives theirs. Invisible, no chat messages, "
+            .. "no character data.", 1, 1, 1, true)
+        GameTooltip:AddLine("Click to turn " .. (ns:IsSharingEnabled() and "off" or "on") .. ".", 0.4, 1, 0.6)
+        GameTooltip:Show()
+    end)
+    W.shareBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
     W.hint = Skin:Text(content, Skin.SIZE.small, "textDim")
-    W.hint:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -12, 0)
+    W.hint:SetPoint("RIGHT", W.shareBtn, "LEFT", -10, 0)
     W.hint:SetText("Shift-click: link" .. DOT .. "Ctrl-click: preview")
     W.status = Skin:Text(content, Skin.SIZE.small, "textDim")
     W.status:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 2, 0)
