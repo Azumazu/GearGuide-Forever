@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.7 (2026-11-12)
+
+- The mini tracker hides itself in battlegrounds and arenas and comes back when you leave
+  (if you had it open). You can still open it mid-match; it stays open until your next entry
+- No zone view or auto-popup inside battlegrounds and arenas
+
 ## 0.4.6 (2026-11-12)
 
 Item database rebuilt from client build 70888: 11227 gear items.

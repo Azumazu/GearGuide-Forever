@@ -464,9 +464,33 @@ local function zoneHasPicks()
     return ok and type(picks) == "table" and #picks > 0
 end
 
+-- Battlegrounds and arenas: the tracker gets out of the way on entry and comes back on exit if
+-- the player had it open (GearGuideDB.mini.shown is the player's choice and is never touched).
+-- Only the transition hides it, so reopening it mid-match sticks until the next entry.
+local wasPvP = false
+local function inPvP()
+    if not IsInInstance then return false end
+    local _, kind = IsInInstance()
+    return kind == "pvp" or kind == "arena"
+end
+
+local function handlePvP()
+    local pvp = inPvP()
+    if pvp and not wasPvP then
+        autoOpened, popupDeferred = false, false
+        hideFrame()
+    elseif not pvp and wasPvP and GearGuideDB.mini.shown and not (frame and frame:IsShown()) then
+        showFrame()
+        ns:RefreshMini()
+    end
+    wasPvP = pvp
+    return pvp
+end
+
 -- Runs (debounced) after zone changes and when combat ends.
 function ns:CheckMiniZone()
     if not ready() then return end
+    if handlePvP() then return end  -- no zone view or auto-popup in battlegrounds/arenas
     local shown = frame and frame:IsShown()
     if shown and not autoOpened then
         self:RefreshMini()      -- the user's tracker: just switch between zone view and top picks
@@ -523,5 +547,8 @@ zoneEvents:SetScript("OnEvent", function(_, event)
         return
     end
     popupDeferred = false
+    -- Hide right away on entering a battleground/arena (no 1s flash after the loading screen);
+    -- IsInInstance is already valid at PLAYER_ENTERING_WORLD.
+    if ready() then handlePvP() end
     scheduleZoneCheck(1)
 end)
