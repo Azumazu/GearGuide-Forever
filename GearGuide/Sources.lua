@@ -51,25 +51,31 @@ end
 -- a small GUID -> name cache filled from units the player targets or mouses over.
 ---------------------------------------------------------------------------
 local nameByGUID, nameCount = {}, 0
+local Plain = ns.Plain  -- secret values (GUIDs/names the client protects) become nil
+
 local function rememberUnit(unit)
-    local guid = UnitGUID and UnitGUID(unit)
-    if guid and not nameByGUID[guid] and not UnitIsPlayer(unit) then
-        if nameCount > 300 then wipe(nameByGUID); nameCount = 0 end  -- keep it small
-        nameByGUID[guid] = UnitName(unit)
-        nameCount = nameCount + 1
-    end
+    local guid = Plain(UnitGUID and UnitGUID(unit))
+    if not guid or nameByGUID[guid] then return end
+    if Plain(UnitIsPlayer(unit)) ~= false then return end  -- players (or unknown) aren't loot sources
+    local name = Plain(UnitName(unit))
+    if not name then return end
+    if nameCount > 300 then wipe(nameByGUID); nameCount = 0 end  -- keep it small
+    nameByGUID[guid] = name
+    nameCount = nameCount + 1
 end
 
 local function lootSourceName(slot)
     if type(GetLootSourceInfo) == "function" then
-        local guid = GetLootSourceInfo(slot)
+        local guid = Plain(GetLootSourceInfo(slot))
         if guid then
             if nameByGUID[guid] then return nameByGUID[guid] end
             local kind = guid:match("^(%a+)")
             if kind == "GameObject" then return "Container" end
         end
     end
-    if UnitExists("target") and UnitIsDead("target") then return UnitName("target") end
+    if Plain(UnitExists("target")) and Plain(UnitIsDead("target")) then
+        return Plain(UnitName("target")) or "Unknown"
+    end
     return "Unknown"
 end
 
@@ -136,7 +142,7 @@ end
 -- Vendors and professions
 ---------------------------------------------------------------------------
 local function onMerchantShow()
-    local src = { t = "vendor", n = UnitName("npc") or "?", z = zone() }
+    local src = { t = "vendor", n = Plain(UnitName("npc")) or "?", z = zone() }
     for i = 1, (GetMerchantNumItems() or 0) do
         local link = GetMerchantItemLink(i)
         if link then ns:LearnLink(link, src) end
@@ -178,12 +184,14 @@ function ns:EnableLearning()
             onMerchantShow()
         elseif event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_UPDATE" then
             onTradeSkillShow()
+        -- Name cache for loot sources: optional enrichment, so it may never raise errors
+        -- (these events fire constantly; a client-side restriction must not spam the error frame).
         elseif event == "PLAYER_TARGET_CHANGED" then
-            rememberUnit("target")
+            pcall(rememberUnit, "target")
         elseif event == "UPDATE_MOUSEOVER_UNIT" then
-            rememberUnit("mouseover")
+            pcall(rememberUnit, "mouseover")
         elseif event == "NAME_PLATE_UNIT_ADDED" then
-            if arg1 then rememberUnit(arg1) end
+            if arg1 then pcall(rememberUnit, arg1) end
         elseif event == "GET_ITEM_INFO_RECEIVED" then
             local p = arg1 and pending[arg1]
             if p then

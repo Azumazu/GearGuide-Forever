@@ -128,7 +128,7 @@ end
 -- Receiving
 ---------------------------------------------------------------------------
 local function isSelf(sender)
-    local me = UnitName("player")
+    local me = ns.Plain(UnitName("player"))
     if not sender or not me then return false end
     local short = Ambiguate and Ambiguate(sender, "none") or sender:match("^[^-]+")
     return short == me
@@ -201,7 +201,11 @@ function ns:StartComm()
     end
     f:SetScript("OnEvent", function(_, event, prefix, message, _, sender)
         if event == "CHAT_MSG_ADDON" then
-            if prefix == PREFIX and type(message) == "string" then receive(message, sender) end
+            -- Secret (client-protected) values can't be used as keys or parsed: skip those messages.
+            prefix, message, sender = ns.Plain(prefix), ns.Plain(message), ns.Plain(sender)
+            if prefix == PREFIX and type(message) == "string" and type(sender) == "string" then
+                receive(message, sender)
+            end
         elseif event == "GROUP_ROSTER_UPDATE" then
             if IsInGroup and IsInGroup() then shareRecent("GROUP") else sharedRecentDone.GROUP = false end
         end

@@ -30,6 +30,14 @@ function ns.Print(...)
     print("|cff33ff99GearGuide|r:", ...)
 end
 
+-- Newer clients (Forever included) can hand addons "secret" values, e.g. a unit's GUID or name in
+-- some situations: they may be passed around but not used as table keys, compared or string-
+-- processed. ns.Plain(v) returns v when it's a normal value and nil when it's secret.
+function ns.Plain(v)
+    if v ~= nil and issecretvalue and issecretvalue(v) then return nil end
+    return v
+end
+
 function ns.LinkToId(link)
     if type(link) == "number" then return link end
     return link and tonumber(link:match("item:(%d+)"))
