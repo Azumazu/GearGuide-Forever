@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.1 (2026-11-12)
+
+Item sources refreshed (11347 gear items, client build 70888).
+- Sources for 1274 more items: crafted gear (with the profession and where to get the recipe),
+  PvP rank rewards and starting equipment
+- Recommendations only show gear your spec should use: the best armor type for your class and
+  level, and only stats your spec values (no Intellect robes for rogues, no Strength rings for mages)
+- Weapons follow your spec's setup: dual wielders get one-handers in the off hand, shield and caster
+  specs get shields / off-hand items, two-hander specs get no off-hand section
+
 ## 0.4.0 (2026-11-12)
 
 Item sources refreshed (11347 gear items, client build 70888).

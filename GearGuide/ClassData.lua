@@ -129,6 +129,23 @@ ns.CLASS_SPECS = {
     },
 }
 
+-- How each spec fills its hands (decides which items count for Main Hand / Off Hand):
+--   dual    = one-hander + one-hander (needs dual wield; falls back below ns.DUAL_WIELD level)
+--   twohand = a two-handed weapon, no off-hand
+--   shield  = one-hander + shield
+--   caster  = one- or two-handed weapon + held-in-off-hand item (or shield where the class can use one)
+ns.SPEC_HANDS = {
+    WARRIOR = { ARMS = "twohand", FURY = "dual", PROTECTION = "shield" },
+    PALADIN = { HOLY = "caster", PROTECTION = "shield", RETRIBUTION = "twohand" },
+    HUNTER  = { BEASTMASTERY = "twohand", MARKSMANSHIP = "twohand", SURVIVAL = "twohand" },
+    ROGUE   = { ASSASSINATION = "dual", COMBAT = "dual", SUBTLETY = "dual" },
+    PRIEST  = { DISCIPLINE = "caster", HOLY = "caster", SHADOW = "caster" },
+    SHAMAN  = { ELEMENTAL = "caster", ENHANCEMENT = "twohand", RESTORATION = "caster" },
+    MAGE    = { ARCANE = "caster", FIRE = "caster", FROST = "caster" },
+    WARLOCK = { AFFLICTION = "caster", DEMONOLOGY = "caster", DESTRUCTION = "caster" },
+    DRUID   = { BALANCE = "caster", FERAL_CAT = "twohand", FERAL_BEAR = "twohand", RESTORATION = "caster" },
+}
+
 ns.ROLE_LABELS = {
     MELEE = "Melee DPS", TANK = "Tank", RANGED = "Ranged DPS", CASTER = "Caster DPS", HEALER = "Healer",
 }

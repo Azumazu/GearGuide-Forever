@@ -401,6 +401,75 @@ def item_sources(store: QuestieStore, iid: int, zones: ZoneData | None = None) -
     return list(unique.values())
 
 
+# ----------------------------------------------------------------------------- inferred sources
+# For items that still have no source: conservative, clearly labelled inferences.
+ITEM_CLASS, ITEM_SUBCLASS = 12, 13
+RECIPE_NAME = re.compile(r"^(Plans|Pattern|Formula|Schematic|Recipe|Design|Manual|Technique): (.+)$")
+PROFESSION_BY_RECIPE_SUBCLASS = {1: "Leatherworking", 2: "Tailoring", 3: "Engineering", 4: "Blacksmithing",
+                                 5: "Cooking", 6: "Alchemy", 7: "First Aid", 8: "Enchanting", 9: "Fishing"}
+PROFESSION_BY_PREFIX = {"Plans": "Blacksmithing", "Formula": "Enchanting", "Schematic": "Engineering",
+                        "Recipe": "Alchemy", "Manual": "First Aid"}
+PVP_RANK = re.compile(r"^(Private's|Scout's|Corporal's|Grunt's|Sergeant's|Master Sergeant's|Sergeant Major's|"
+                      r"Stone Guard's|First Sergeant's|Knight's|Blood Guard's|Knight-Lieutenant's|Legionnaire's|"
+                      r"Knight-Captain's|Centurion's|Knight-Champion's|Champion's|Lieutenant Commander's|"
+                      r"Lieutenant General's|Commander's|General's|Marshal's|Warlord's|Field Marshal's|"
+                      r"Grand Marshal's|High Warlord's)\s")
+STARTER = re.compile(r"^(Recruit's|Apprentice's|Neophyte's|Acolyte's|Squire's|Footpad's|Initiate's|Novice's|"
+                     r"Trapper's|Rugged Trapper's|Primitive|Tribal|Ancestral|Thug|Worn|Bent|Battleworn|Hunting|Tarnished)\b")
+FOREVER_ID_START = 260000
+
+
+def _recipe_index(store: QuestieStore) -> dict[str, tuple[int, str, str]]:
+    """Crafted item name -> (recipe item ID, recipe name, profession)."""
+    index = {}
+    for rid in store.ids("Item"):
+        name = store.name("Item", rid)
+        m = RECIPE_NAME.match(name or "")
+        if not m:
+            continue
+        row = store.row("Item", rid)
+        prof = None
+        if row.get(ITEM_CLASS) == 9:
+            prof = PROFESSION_BY_RECIPE_SUBCLASS.get(row.get(ITEM_SUBCLASS))
+        prof = prof or PROFESSION_BY_PREFIX.get(m.group(1)) or "Profession"
+        index.setdefault(m.group(2), (rid, name, prof))
+    return index
+
+
+def infer_sources(items: dict[int, dict], store: QuestieStore, zones: ZoneData) -> dict[str, int]:
+    """Adds inferred sources ("k": "guess" when it's an estimate) to items that have none. Returns counts."""
+    recipes = _recipe_index(store)
+    counts: dict[str, int] = {}
+
+    def add(rec, src, kind):
+        rec["src"] = [src]
+        counts[kind] = counts.get(kind, 0) + 1
+
+    for iid, rec in items.items():
+        if rec.get("src"):
+            continue
+        name, quality, ilvl = rec.get("n") or "", rec.get("q") or 1, rec.get("il") or 0
+        if name in recipes:
+            rid, recipe_name, prof = recipes[name]
+            # Where to get the recipe: its first source with a map location (vendor, drop, quest).
+            recipe_src = next((s for s in item_sources(store, rid, zones) if s.get("loc")), None)
+            src = {"t": "craft", "n": f"{prof} ({recipe_name})"}
+            if recipe_src:
+                src["z"] = recipe_src.get("z")
+                src["loc"] = recipe_src["loc"]
+            add(rec, {k: v for k, v in src.items() if v is not None}, "crafted")
+        elif PVP_RANK.match(name):
+            add(rec, {"t": "pvp", "n": "PvP rank reward"}, "pvp")
+        elif STARTER.match(name) and (rec.get("rl") or 0) <= 1 and quality <= 1:
+            add(rec, {"t": "start", "n": "Starting equipment"}, "starting gear")
+        elif rec.get("r") and ilvl > 0:
+            # Only items with random enchantments ("of the Bear"): those really are world drops.
+            # Plain greens without a source are often trainer-crafted, so they stay unknown.
+            low, high = max(1, ilvl - 4), ilvl + 1
+            add(rec, {"t": "world", "n": f"creatures around level {low}-{high}", "k": "guess"}, "likely world drop")
+    return counts
+
+
 def merge_sources(items: dict[int, dict], questie_path: Path) -> tuple[int, int]:
     """Adds Questie sources to GearGuide items in place. Returns (items with new sources, sources added)."""
     store = QuestieStore(find_toc(questie_path))
@@ -417,6 +486,10 @@ def merge_sources(items: dict[int, dict], questie_path: Path) -> tuple[int, int]
             have.extend(fresh)
             touched += 1
             added += len(fresh)
+    inferred = infer_sources(items, store, zones)
+    if inferred:
+        print("Inferred sources for items without one: "
+              + ", ".join(f"{n} {k}" for k, n in sorted(inferred.items(), key=lambda kv: -kv[1])))
     return touched, added
 
 

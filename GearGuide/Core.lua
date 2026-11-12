@@ -166,7 +166,8 @@ function ns:GetSources(id)
     return out
 end
 
-local SOURCE_LABELS = { drop = "Drop", quest = "Quest", vendor = "Vendor", craft = "Crafted" }
+local SOURCE_LABELS = { drop = "Drop", quest = "Quest", vendor = "Vendor", craft = "Crafted",
+    world = "World drop", pvp = "PvP", start = "Starting gear" }
 
 -- Zones arrive as names (learned in game) or area IDs (imported data); IDs become localized names.
 local zoneNames = {}
@@ -184,6 +185,7 @@ function ns.FormatSource(s)
     local zone = ns.ZoneName(s.z)
     if zone and zone ~= "" then text = text .. " (" .. zone .. ")" end
     if s.shared then text = text .. " |cff888888(shared by players)|r" end
+    if s.k == "guess" then text = text .. " |cff888888(likely)|r" end
     return text
 end
 

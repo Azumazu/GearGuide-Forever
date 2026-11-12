@@ -81,6 +81,8 @@ function ns:ReadTooltipInto(link, rec)
         if text then
             if text == ITEM_UNIQUE or text == ITEM_UNIQUE_EQUIPPABLE then
                 rec.u = 1
+            elseif ITEM_RANDOM_ENCHANT and text == ITEM_RANDOM_ENCHANT then
+                rec.r = 1  -- "<Random enchantment>": a world-drop green/blue with random "of the ..." stats
             elseif classPattern and text:match(classPattern) then
                 local list = {}
                 for name in text:match(classPattern):gmatch("[^,]+") do
