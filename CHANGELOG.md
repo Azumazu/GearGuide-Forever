@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.3 (2026-11-12)
+
+Item sources refreshed (11347 gear items, client build 70888).
+- 14 new item sources
+- Mini tracker zone view: in a zone or instance with drops that are upgrades for you (or favorites),
+  the mini tracker lists those items and who drops them; Ctrl-click a row to see the spot on the map
+- New mini setting (map button in its header, or /gg mini auto): auto-open the mini tracker when you
+  enter such a zone, and close it again when you leave (only if it opened itself)
+- Fixed an error flood from protected unit values when hovering mobs
+- Larger, less crowded buttons; EllesmereUI-style window backdrop with see-through rows
+- Crafted "Pattern" items now name the right profession (Tailoring or Leatherworking)
+
 ## 0.4.2 (2026-11-12)
 
 Item sources refreshed (11347 gear items, client build 70888).

@@ -12,7 +12,8 @@ local defaults = {
     levelBehind = 5,  -- recommend items whose required level is up to this many levels below you
     levelAhead = 3,   -- ...and up to this many levels above you (things to aim for)
     window = { w = 760, h = 480 },
-    mini = { shown = false, count = 10, hideCompleted = false },
+    -- autoPopup: open the mini tracker when entering a zone/instance with recommended items
+    mini = { shown = false, count = 10, hideCompleted = false, autoPopup = true },
 }
 
 local function applyDefaults(dst, src)
@@ -575,8 +576,17 @@ SlashCmdList.GEARGUIDE = function(msg)
     elseif cmd == "rec" then
         ns:ShowWindow("recommended")
     elseif cmd == "mini" then
-        local n = tonumber(rest)
-        if n then ns:SetMiniCount(n) else ns:ToggleMini() end
+        local sub, arg = rest:lower():match("^(%S*)%s*(.-)$")
+        local n = tonumber(sub)
+        if n then
+            ns:SetMiniCount(n)
+        elseif sub == "auto" then
+            local on = (arg == "on") or (arg ~= "off" and not GearGuideDB.mini.autoPopup)
+            ns:SetMiniAutoPopup(on)
+            ns.Print("Mini tracker auto-popup in zones with recommended items: " .. (on and "on" or "off"))
+        else
+            ns:ToggleMini()
+        end
     elseif cmd == "sharing" then
         local want = rest:lower()
         if want == "on" or want == "off" then ns:SetSharing(want == "on")

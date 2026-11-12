@@ -60,6 +60,87 @@ function ns:GetTopPicks(n, hideCompleted)
     return out
 end
 
+---------------------------------------------------------------------------
+-- Current zone: which recommended items can be obtained right here?
+---------------------------------------------------------------------------
+-- The player's location: zone (or instance) name, world map ID and whether inside an instance.
+function ns:CurrentZone()
+    local name = ns.Plain(GetRealZoneText and GetRealZoneText()) or ""
+    local mapID = C_Map and C_Map.GetBestMapForUnit and ns.Plain(C_Map.GetBestMapForUnit("player"))
+    local inInstance = IsInInstance and ns.Plain(IsInInstance()) or false
+    return name, mapID, inInstance and true or false
+end
+
+-- Is this source in the given zone? Zones match by name (works for instances and the client's
+-- language) or by world map for outdoor spawns. Dungeon entrances on an outdoor map don't count:
+-- those drops are inside the dungeon.
+function ns.SourceInZone(s, zoneName, mapID, inInstance)
+    if s.t == "craft" then return false end  -- crafted: the recipe's location isn't where the item drops
+    if zoneName ~= "" then
+        if s.z and ns.ZoneName(s.z) == zoneName then return true end
+        for _, entry in ipairs(s.loc or {}) do
+            if entry.e and ns.ZoneName(entry.e) == zoneName then return true end
+        end
+    end
+    if mapID and not inInstance then
+        for _, entry in ipairs(s.loc or {}) do
+            if not entry.e and entry.m == mapID then return true end
+        end
+    end
+    return false
+end
+
+-- Recommended items obtainable in the current zone: upgrades for the player's spec and favorites
+-- still wanted, best upgrade first. Each pick carries .zoneSource (the matching source).
+-- Returns picks, zoneName.
+function ns:GetZonePicks(n)
+    local zoneName, mapID, inInstance = self:CurrentZone()
+    local class = self:GetPlayerClass()
+    local candidates, seen = {}, {}
+    local function consider(p)
+        if seen[p.id] or self:GetCompletion(p.id, class) == "done" then return end
+        seen[p.id] = true
+        local chest
+        for _, s in ipairs(self:GetSources(p.id)) do
+            if ns.SourceInZone(s, zoneName, mapID, inInstance) then
+                if s.k ~= "object" then
+                    p.zoneSource = s  -- a creature, boss, vendor or quest here: best kind of match
+                    break
+                end
+                chest = chest or s
+            end
+        end
+        p.zoneSource = p.zoneSource or chest
+        if p.zoneSource then
+            p.chestOnly = p.zoneSource == chest
+            p.favorite = self:IsFavorite(p.id)
+            candidates[#candidates + 1] = p
+        end
+    end
+    for _, g in ipairs(self:BuildRecommendations().groups) do
+        for _, p in ipairs(g.upgrades or {}) do
+            p.groupLabel = g.label
+            consider(p)
+        end
+    end
+    local weights, ctx = self:GetScoringContext()
+    for _, id in ipairs(self:GetFavorites()) do
+        local item = self:GetItem(id)
+        if item then
+            consider({ id = id, item = item, score = self:Score(item, weights, ctx), delta = 0,
+                groupLabel = ns.SlotLabel(item.eq) })
+        end
+    end
+    table.sort(candidates, function(a, b)
+        if (a.favorite and 1 or 0) ~= (b.favorite and 1 or 0) then return a.favorite == true end
+        if (a.chestOnly and 1 or 0) ~= (b.chestOnly and 1 or 0) then return not a.chestOnly end  -- random chest loot last
+        return (a.delta or 0) > (b.delta or 0)
+    end)
+    local out = {}
+    for i = 1, math.min(n or #candidates, #candidates) do out[i] = candidates[i] end
+    return out, zoneName
+end
+
 -- Returns item record, link and id for what's in an equipment slot.
 function ns:ItemForSlot(slotId)
     local link = GetInventoryItemLink("player", slotId)
@@ -175,18 +256,18 @@ function ns:BuildRecommendations()
         for _, p in ipairs(list) do
             if p.armorOk and not equippedIds[p.id] then anyBestArmor = true break end
         end
-        local picks = {}
+        local picks, upgrades = {}, {}
         for _, p in ipairs(list) do
             if not equippedIds[p.id] and (p.armorOk or not anyBestArmor) then
                 p.delta = p.score - eqScore
-                picks[#picks + 1] = p
-                if #picks >= PICKS_PER_SLOT then break end
+                if #picks < PICKS_PER_SLOT then picks[#picks + 1] = p end
+                if p.delta > 0 then upgrades[#upgrades + 1] = p end  -- every real upgrade (zone view)
             end
         end
         result.groups[#result.groups + 1] = {
             key = grp.key, label = grp.label,
             equippedLink = eqLink, equippedScore = eqLink and eqScore or nil,
-            picks = picks,
+            picks = picks, upgrades = upgrades,
         }
       end
     end

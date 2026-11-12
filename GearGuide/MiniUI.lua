@@ -1,9 +1,12 @@
 local _, ns = ...
 
 -- Compact, quest-tracker sized list of the best gear pieces for the player's level.
--- Public: ns:ShowMini(), ns:HideMini(), ns:ToggleMini(), ns:SetMiniCount(n), ns:RefreshMini()
+-- In a zone/instance where recommended items can be obtained it switches to a zone view
+-- ("In <zone>": those items and where they come from), and can pop up on its own there.
+-- Public: ns:ShowMini(), ns:HideMini(), ns:ToggleMini(), ns:SetMiniCount(n), ns:RefreshMini(),
+--         ns:SetMiniAutoPopup(on)
 
-local WIDTH = 260
+local WIDTH = 300     -- room for the zone view's source column and the header buttons
 local HEADER_H = 28   -- fits the 20px header buttons with 4px margins
 local ROW_H = 24      -- bar rows (Skin:BarRow): 3px quality bar, 24px icon
 local ROW_GAP = 2
@@ -13,9 +16,13 @@ local MAX_ROWS = 20
 local FONT_SIZE = 11
 
 local READY = "Interface\\RaidFrame\\ReadyCheck-Ready"
+local MAP_ICON = "Interface\\Icons\\INV_Misc_Map_01"  -- item icon: present on every client
+local SLOT_W, ZONE_SRC_W = 52, 104                   -- right-side dim column: slot / zone source
 
 local frame          -- created lazily on first ShowMini
 local rows = {}
+local zoneMode = false     -- showing "In <zone>" picks instead of the top picks
+local autoOpened = false   -- the mini was opened by the zone auto-popup (not by the user)
 
 ---------------------------------------------------------------------------
 -- Helpers
@@ -61,6 +68,13 @@ local function restorePosition(f)
     end
 end
 
+-- Where in the zone, short: "Old Serra'kis" (drop), "Vendor: X", "Quest: Y", ...
+local SOURCE_PREFIX = { vendor = "Vendor: ", quest = "Quest: ", craft = "Crafted: " }
+local function zoneSourceText(src)
+    if type(src) ~= "table" then return "" end
+    return (SOURCE_PREFIX[src.t] or "") .. (src.n or "?")
+end
+
 ---------------------------------------------------------------------------
 -- Rows
 ---------------------------------------------------------------------------
@@ -69,6 +83,14 @@ local function rowOnEnter(row)
     ns:ShowItemTooltip(row, row.pick.id, {
         score = row.pick.score, delta = row.pick.delta, anchor = "ANCHOR_LEFT",
     })
+    local src = row.pick.zoneSource
+    if type(src) == "table" and GameTooltip:IsOwned(row) then
+        GameTooltip:AddLine("Here: " .. ns.FormatSource(src), 1, 0.82, 0, true)
+        if ns.HasLocation and ns.HasLocation(src) then
+            GameTooltip:AddLine("Ctrl-click: show on the map", 0.4, 1, 0.6)
+        end
+        GameTooltip:Show()
+    end
 end
 
 local function rowOnLeave(row)
@@ -85,6 +107,10 @@ local function rowOnClick(row)
     if IsShiftKeyDown() then
         local link = select(2, ns.GetItemInfo(pick.id))
         if link and ChatEdit_InsertLink then ChatEdit_InsertLink(link) end
+        return
+    end
+    if IsControlKeyDown and IsControlKeyDown() and type(pick.zoneSource) == "table" then
+        ns:ShowSourceOnMap(pick.zoneSource)
         return
     end
     ns:ShowItem(pick.id)
@@ -111,7 +137,7 @@ local function createRow(parent, index)
 
     row.slot = ns.Skin:Text(row, 10, "textDim")
     row.slot:SetPoint("RIGHT", row.mark, "LEFT", -2, 0)
-    row.slot:SetWidth(52)
+    row.slot:SetWidth(SLOT_W)
     row.slot:SetJustifyH("RIGHT")
     row.slot:SetWordWrap(false)
 
@@ -171,7 +197,13 @@ local function fillRow(row, pick)
     end
     row.name:SetText(item.n or ("item:" .. pick.id))
     row.name:SetTextColor(color(done and "textDim" or "text"))
-    row.slot:SetText(pick.groupLabel or (item.eq and ns.SlotLabel(item.eq)) or "")
+    if pick.zoneSource then
+        row.slot:SetWidth(ZONE_SRC_W)  -- zone view: where in this zone instead of the slot
+        row.slot:SetText(zoneSourceText(pick.zoneSource))
+    else
+        row.slot:SetWidth(SLOT_W)
+        row.slot:SetText(pick.groupLabel or (item.eq and ns.SlotLabel(item.eq)) or "")
+    end
     if pick.delta and pick.delta > 0 then
         row.delta:SetText(string.format("+%.1f", pick.delta))
     else
@@ -207,6 +239,10 @@ local function updateHeader()
     if db.count <= 1 then frame.minus:Disable() else frame.minus:Enable() end
     if db.count >= MAX_ROWS then frame.plus:Disable() else frame.plus:Enable() end
     frame.doneIcon:SetAlpha(db.hideCompleted and 1 or 0.3)
+    local on = db.autoPopup and true or false
+    frame.autoBtn:SetActive(on)
+    if frame.autoBtn.icon.SetDesaturated then frame.autoBtn.icon:SetDesaturated(not on) end
+    frame.autoBtn.icon:SetAlpha(on and 1 or 0.35)
 end
 
 local function createFrame()
@@ -241,6 +277,7 @@ local function createFrame()
 
     local title = ns.Skin:Text(header, 12, "accent")
     title:SetPoint("LEFT", header, "LEFT", 8, 0)
+    title:SetWordWrap(false)
     title:SetText("GearGuide")
     f.title = title
 
@@ -270,8 +307,26 @@ local function createFrame()
         return GearGuideDB.mini.hideCompleted and "On: acquired items are hidden." or "Off: acquired items are shown."
     end)
 
+    -- Auto-popup in zones with recommended items (on: full-color map + accent bar).
+    local auto = ns.Skin:IconButton(header, "", BTN)
+    auto:SetPoint("RIGHT", done, "LEFT", -4, 0)
+    local autoIcon = auto:CreateTexture(nil, "OVERLAY")
+    autoIcon:SetTexture(MAP_ICON)
+    autoIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    autoIcon:SetSize(BTN - 6, BTN - 6)
+    autoIcon:SetPoint("CENTER")
+    auto.icon = autoIcon
+    auto:SetScript("OnClick", function() ns:SetMiniAutoPopup(not GearGuideDB.mini.autoPopup) end)
+    addTooltip(auto, "Auto-open in zones with recommended items", function()
+        return (GearGuideDB.mini.autoPopup and "On" or "Off")
+            .. ": the tracker opens by itself when you enter a zone or instance where your upgrades "
+            .. "or favorites drop, and closes again when you leave (unless you opened it yourself). "
+            .. "Also: /gg mini auto"
+    end)
+    f.autoBtn = auto
+
     local plus = ns.Skin:IconButton(header, "+", BTN)
-    plus:SetPoint("RIGHT", done, "LEFT", -8, 0)
+    plus:SetPoint("RIGHT", auto, "LEFT", -8, 0)
     plus:SetScript("OnClick", function() ns:SetMiniCount(GearGuideDB.mini.count + 1) end)
     addTooltip(plus, "Show more items")
     f.plus = plus
@@ -287,6 +342,7 @@ local function createFrame()
     minus:SetScript("OnClick", function() ns:SetMiniCount(GearGuideDB.mini.count - 1) end)
     addTooltip(minus, "Show fewer items")
     f.minus = minus
+    title:SetPoint("RIGHT", minus, "LEFT", -8, 0)  -- long zone names truncate
 
     -- One-line note when there is nothing to list
     local note = ns.Skin:Text(f, FONT_SIZE, "textDim")
@@ -320,7 +376,17 @@ function ns:RefreshMini()
     db.count = clampCount(db.count)
     updateHeader()
 
-    local picks = self:GetTopPicks(db.count, db.hideCompleted) or {}
+    -- Zone view when recommended items can be obtained right here; otherwise the top picks.
+    local picks, zoneName = {}, nil
+    if self.GetZonePicks then picks, zoneName = self:GetZonePicks(db.count) end
+    picks = picks or {}
+    zoneMode = #picks > 0
+    if zoneMode then
+        frame.title:SetText("In " .. (zoneName or "this zone"))
+    else
+        frame.title:SetText("GearGuide")
+        picks = self:GetTopPicks(db.count, db.hideCompleted) or {}
+    end
     local n = math.min(#picks, MAX_ROWS)
     for i = 1, n do
         rows[i] = rows[i] or createRow(frame, i)
@@ -346,21 +412,31 @@ function ns:RefreshMini()
     end
 end
 
-function ns:ShowMini()
+local function showFrame()
     if not frame then frame = createFrame() end
-    GearGuideDB.mini.shown = true
     frame:Show()
-    self:RefreshMini()
-    if self.RefreshUI then self:RefreshUI() end  -- keep the main window's "Mini" button in sync
 end
 
-function ns:HideMini()
-    GearGuideDB.mini.shown = false
+local function hideFrame()
     if frame then frame:Hide() end
     for k in pairs(pendingIcons) do pendingIcons[k] = nil end
     for _, row in ipairs(rows) do
         if GameTooltip:IsOwned(row) then ns:HideItemTooltip() break end
     end
+end
+
+function ns:ShowMini()
+    autoOpened = false  -- the user's choice wins over the auto-popup
+    GearGuideDB.mini.shown = true
+    showFrame()
+    self:RefreshMini()
+    if self.RefreshUI then self:RefreshUI() end  -- keep the main window's "Mini" button in sync
+end
+
+function ns:HideMini()
+    autoOpened = false
+    GearGuideDB.mini.shown = false
+    hideFrame()
     if self.RefreshUI then self:RefreshUI() end
 end
 
@@ -372,3 +448,80 @@ function ns:SetMiniCount(n)
     GearGuideDB.mini.count = clampCount(n)
     self:RefreshMini()
 end
+
+---------------------------------------------------------------------------
+-- Zone auto-popup
+---------------------------------------------------------------------------
+local zoneTimer
+local popupDeferred = false   -- entered a zone with picks during combat: pop up afterwards
+
+local function ready()
+    return GearGuideDB ~= nil and GearGuideDB.mini ~= nil and GearGuideCharDB ~= nil and ns.GetZonePicks ~= nil
+end
+
+local function zoneHasPicks()
+    local ok, picks = pcall(ns.GetZonePicks, ns, 1)
+    return ok and type(picks) == "table" and #picks > 0
+end
+
+-- Runs (debounced) after zone changes and when combat ends.
+function ns:CheckMiniZone()
+    if not ready() then return end
+    local shown = frame and frame:IsShown()
+    if shown and not autoOpened then
+        self:RefreshMini()      -- the user's tracker: just switch between zone view and top picks
+        return
+    end
+    local has = zoneHasPicks()
+    if shown then               -- auto-opened: follow the zone
+        if has then
+            self:RefreshMini()
+        else
+            autoOpened = false
+            hideFrame()         -- mini.shown was never set, nothing to persist
+        end
+        return
+    end
+    if has and GearGuideDB.mini.autoPopup then
+        if InCombatLockdown and InCombatLockdown() then
+            popupDeferred = true
+            return
+        end
+        showFrame()             -- not persisted: GearGuideDB.mini.shown stays false
+        autoOpened = true
+        self:RefreshMini()
+    end
+end
+
+local function scheduleZoneCheck(delay)
+    if zoneTimer then zoneTimer:Cancel() end
+    zoneTimer = C_Timer.NewTimer(delay or 1, function()  -- zone name/map settle after loading
+        zoneTimer = nil
+        ns:CheckMiniZone()
+    end)
+end
+
+function ns:SetMiniAutoPopup(on)
+    GearGuideDB.mini.autoPopup = on and true or false
+    if frame then updateHeader() end
+    if on then scheduleZoneCheck(0.1) end  -- pop up right away if this zone has picks
+end
+
+function ns:IsMiniAutoOpened() return autoOpened end
+
+local zoneEvents = CreateFrame("Frame")
+for _, e in ipairs({ "ZONE_CHANGED_NEW_AREA", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_INDOORS",
+                     "PLAYER_REGEN_ENABLED" }) do
+    pcall(zoneEvents.RegisterEvent, zoneEvents, e)
+end
+zoneEvents:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        if popupDeferred then
+            popupDeferred = false
+            ns:CheckMiniZone()
+        end
+        return
+    end
+    popupDeferred = false
+    scheduleZoneCheck(1)
+end)

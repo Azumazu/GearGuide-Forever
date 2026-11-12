@@ -478,6 +478,9 @@ def infer_sources(items: dict[int, dict], store: QuestieStore, zones: ZoneData) 
         name, quality, ilvl = rec.get("n") or "", rec.get("q") or 1, rec.get("il") or 0
         if name in recipes:
             rid, recipe_name, prof = recipes[name]
+            if prof == "Profession" and recipe_name.startswith("Pattern:"):
+                # "Pattern" is shared: cloth -> Tailoring, leather/mail -> Leatherworking
+                prof = "Tailoring" if rec.get("sc") == 1 else "Leatherworking" if rec.get("sc") in (2, 3) else prof
             # Where to get the recipe: first source with a map location, preferring ones both factions
             # can use. The crafted item itself stays faction-neutral (it can be traded).
             located = [s for s in item_sources(store, rid, zones) if s.get("loc")]
