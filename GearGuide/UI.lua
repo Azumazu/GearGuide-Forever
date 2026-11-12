@@ -6,8 +6,8 @@ local _, ns = ...
 local ROW_H, ROW_GAP = 30, 2         -- row pitch; rows are 28px bars with a 2px gap
 local DETAIL_W = 230
 local GAP = 6
-local FOOTER_H = 14
-local MIN_W, MIN_H, MAX_W, MAX_H = 620, 360, 1400, 1000
+local FOOTER_H = 24                   -- footer line: status text + 24px Sharing button
+local MIN_W, MIN_H, MAX_W, MAX_H = 620, 400, 1400, 1000
 local BODY_W = DETAIL_W - 22          -- detail panel text width (padding + slim scroll bar)
 
 local ORANGE = "|cffff8040"
@@ -20,8 +20,8 @@ local PLUSMINUS = "\194\177"          -- "±"
 -- right edge): favorite star, score, completion mark, req. level, then slot and source as
 -- optional columns.
 local NAME_X = 3 + 1 + (ROW_H - ROW_GAP) + 7
-local STAR_W = 16
-local SCORE_X = -(6 + STAR_W + 4)     -- score's right edge, left of the star
+local STAR_W, STAR_HIT = 16, 20      -- drawn star / clickable area
+local SCORE_X = -(4 + STAR_HIT + 4)   -- score's right edge, left of the star's hit area
 local SCORE_W, MARK_W, LVL_W, SLOT_W = 70, 24, 24, 62
 local RIGHT_W = -SCORE_X + SCORE_W + 4 + MARK_W + 4 + LVL_W
 local NAME_MIN = 105                  -- the name keeps at least this; source goes first, then slot
@@ -342,8 +342,8 @@ local function createRow(row)
     row.hLink:SetWordWrap(false)
 
     -- Favorite toggle at the far right (a child button: clicking it doesn't select the row).
-    row.star = Skin:StarButton(row, STAR_W)
-    row.star:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+    row.star = Skin:StarButton(row, STAR_HIT, STAR_W)
+    row.star:SetPoint("RIGHT", row, "RIGHT", -4, 0)
     row.star.tooltip = { "Favorite", "Mark this as an item you're going for. Alt-click a row also toggles." }
     row.star.onToggle = function()
         local d = row.data
@@ -697,8 +697,8 @@ local function attachSourceButton(fs, source)
     end
     b.source = source
     b:ClearAllPoints()
-    b:SetPoint("TOPLEFT", fs, "TOPLEFT", -2, 1)
-    b:SetPoint("BOTTOMRIGHT", fs, "BOTTOMRIGHT", 2, -1)
+    b:SetPoint("TOPLEFT", fs, "TOPLEFT", -2, 3)        -- 3px vertical padding on the hit area
+    b:SetPoint("BOTTOMRIGHT", fs, "BOTTOMRIGHT", 2, -3)
     b:Show()
 end
 
@@ -872,7 +872,7 @@ function updateDetail()
             if ns.HasLocation(s) then
                 onMap = onMap + 1
                 local icon = ns.MapIconFor and ns.MapIconFor(s)
-                bodyAdd((icon and ("|T" .. icon .. ":12:12|t ") or BULLET) .. ns.FormatSource(s), small, "text", 2, 6)
+                bodyAdd((icon and ("|T" .. icon .. ":12:12|t ") or BULLET) .. ns.FormatSource(s), small, "text", 4, 6)
                 attachSourceButton(bodyLines[bodyCount], s)
             else
                 bodyAdd(BULLET .. ns.FormatSource(s), small, "textDim", 2, 6)
@@ -969,8 +969,8 @@ local function layoutBrowseBar()
     local bar = W.browseBar
     local width = bar:GetWidth() or 0
     if width <= 0 then return end
-    W.search:SetWidth(math.max(120, math.min(240, math.floor(width * 0.3))))
-    local x, y, rowH, gap = 0, 0, 26, 4
+    W.search:SetWidth(math.max(110, math.min(240, math.floor(width * 0.3))))
+    local x, y, rowH, gap = 0, 0, 32, ns.Skin.GAP
     for _, it in ipairs(W.flow) do
         local w = it.width and it.width() or it.f:GetWidth()
         if x > 0 and x + w > width then x = 0; y = y + rowH end
@@ -978,7 +978,7 @@ local function layoutBrowseBar()
         it.f:SetPoint("TOPLEFT", bar, "TOPLEFT", x, -(y + (it.yo or 0)))
         x = x + w + gap + (it.extra or 0)
     end
-    bar:SetHeight(y + rowH - 2)
+    bar:SetHeight(y + ns.Skin.CONTROL_H)
 end
 
 local function syncBrowserControls()
@@ -1057,19 +1057,19 @@ local function createBrowseBar(parent)
 
     -- Level range group: "Level [min] – [max]"
     local lvl = CreateFrame("Frame", nil, bar)
-    lvl:SetSize(104, 20)
+    lvl:SetSize(118, 24)
     local lbl = Skin:Text(lvl, Skin.SIZE.small, "textDim")
     lbl:SetPoint("LEFT", 0, 0)
     lbl:SetText("Level")
-    local minBox = Skin:EditBox(lvl, 30, true)
+    local minBox = Skin:EditBox(lvl, 34, true)
     minBox:SetMaxLetters(2)
-    minBox:SetPoint("LEFT", lbl, "RIGHT", 4, 0)
+    minBox:SetPoint("LEFT", lbl, "RIGHT", 6, 0)
     local dash = Skin:Text(lvl, Skin.SIZE.small, "textDim")
-    dash:SetPoint("LEFT", minBox, "RIGHT", 3, 0)
+    dash:SetPoint("LEFT", minBox, "RIGHT", 4, 0)
     dash:SetText(DASH)
-    local maxBox = Skin:EditBox(lvl, 30, true)
+    local maxBox = Skin:EditBox(lvl, 34, true)
     maxBox:SetMaxLetters(2)
-    maxBox:SetPoint("LEFT", dash, "RIGHT", 3, 0)
+    maxBox:SetPoint("LEFT", dash, "RIGHT", 4, 0)
     local function onLevelChanged(_, userInput)
         if not userInput then return end
         f.userLevel = true  -- stop following the player's level once edited by hand
@@ -1120,14 +1120,14 @@ local function createBrowseBar(parent)
     W.count:SetWidth(80)
     W.count:SetWordWrap(false)
 
+    -- All controls are 24px tall; yo centers the count text on the line.
     W.flow = {
-        { f = search, yo = 1 },
+        { f = search },
         { f = W.classSel }, { f = W.specSel }, { f = W.slotSel },
-        { f = lvl, yo = 1, extra = 4 },
+        { f = lvl },
         { f = W.qualitySel }, { f = W.sortSel },
-        { f = W.usableCb, yo = 3, extra = 6 }, { f = W.hideCb, yo = 3, extra = 6 },
-        { f = W.favCb, yo = 3, extra = 6 },
-        { f = W.count, yo = 5, width = function() return 80 end },
+        { f = W.usableCb }, { f = W.hideCb }, { f = W.favCb },
+        { f = W.count, yo = 6, width = function() return 80 end },
     }
     bar:SetScript("OnSizeChanged", layoutBrowseBar)
     return bar
@@ -1205,7 +1205,7 @@ local function createDetail(content)
     local detail = Skin:Panel(content, "panel", "border")
     detail:SetWidth(DETAIL_W)
     detail:SetPoint("TOPRIGHT", W.tabStrip, "BOTTOMRIGHT", 0, -GAP)
-    detail:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, FOOTER_H + 4)
+    detail:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, FOOTER_H + 6)
     W.detail = detail
 
     local icon = CreateFrame("Button", nil, detail, "BackdropTemplate")
@@ -1235,15 +1235,15 @@ local function createDetail(content)
     W.dName = name
 
     -- Favorite toggle under the icon/name (star + label; accent "active" look when favorited).
-    local fav = Skin:Button(detail, "Favorite", 104, 18)
-    fav:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", 0, -6)
+    local fav = Skin:Button(detail, "Favorite", 112, Skin.CONTROL_H)
+    fav:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", 0, -8)
     fav.star = fav:CreateTexture(nil, "OVERLAY")
     fav.star:SetSize(14, 14)
-    fav.star:SetPoint("LEFT", 6, 0)
+    fav.star:SetPoint("LEFT", 10, 0)
     fav.star:SetTexture(Skin.STAR)
     fav.text:ClearAllPoints()
     fav.text:SetPoint("LEFT", fav.star, "RIGHT", 4, 0)
-    fav.text:SetPoint("RIGHT", -6, 0)
+    fav.text:SetPoint("RIGHT", -10, 0)
     fav:SetScript("OnMouseDown", nil)  -- keep the label anchored next to the star
     fav:SetScript("OnMouseUp", nil)
     fav:SetScript("OnClick", function()
@@ -1261,7 +1261,7 @@ local function createDetail(content)
     W.favBtn = fav
 
     local sf = CreateFrame("ScrollFrame", nil, detail)
-    sf:SetPoint("TOPLEFT", fav, "BOTTOMLEFT", 0, -6)
+    sf:SetPoint("TOPLEFT", fav, "BOTTOMLEFT", 0, -8)
     sf:SetPoint("BOTTOMRIGHT", detail, "BOTTOMRIGHT", -12, 8)
     local child = CreateFrame("Frame", nil, sf)
     child:SetSize(BODY_W, 1)
@@ -1392,11 +1392,10 @@ local function createWindow()
         tooltip = { "Your specialization", "Used to score the Recommended tab and the mini tracker. "
             .. "Auto follows your talents." },
     })
-    W.specDD:SetHeight(20)
-    W.specDD:SetPoint("RIGHT", frame.closeButton, "LEFT", -6, 0)
+    W.specDD:SetPoint("RIGHT", frame.closeButton, "LEFT", -Skin.GAP, 0)
 
-    W.miniBtn = Skin:Button(header, "Mini", 44, 20)
-    W.miniBtn:SetPoint("RIGHT", W.specDD, "LEFT", -4, 0)
+    W.miniBtn = Skin:Button(header, "Mini")  -- text + 10px padding, 24px tall
+    W.miniBtn:SetPoint("RIGHT", W.specDD, "LEFT", -Skin.GAP, 0)
     W.miniBtn:SetScript("OnClick", function(self)
         ns:ToggleMini()
         self:SetActive(GearGuideDB.mini and GearGuideDB.mini.shown)
@@ -1413,7 +1412,7 @@ local function createWindow()
 
     -- Tab strip under the header: text tabs with a copper underline on the active one.
     local strip = CreateFrame("Frame", nil, content)
-    strip:SetHeight(26)
+    strip:SetHeight(30)
     strip:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
     strip:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, 0)
     local stripLine = Skin:Divider(strip, "edge")
@@ -1421,17 +1420,18 @@ local function createWindow()
     stripLine:SetPoint("BOTTOMRIGHT")
     stripLine:SetAlpha(0.5)
     W.tabStrip = strip
-    W.recTab = Skin:Tab(strip, "Recommended", 26)
+    W.recTab = Skin:Tab(strip, "Recommended", 30)
     W.recTab:SetPoint("BOTTOMLEFT", strip, "BOTTOMLEFT", 0, 0)
     W.recTab:SetScript("OnClick", function() setTab("recommended") end)
-    W.browseTab = Skin:Tab(strip, "Gear Browser", 26)
-    W.browseTab:SetPoint("LEFT", W.recTab, "RIGHT", 4, 0)
+    W.browseTab = Skin:Tab(strip, "Gear Browser", 30)
+    W.browseTab:SetPoint("LEFT", W.recTab, "RIGHT", 6, 0)
     W.browseTab:SetScript("OnClick", function() setTab("browser") end)
 
     -- Footer
     -- Opt-out for in-game source sharing (Comm.lua)
-    W.shareBtn = Skin:Button(content, "", 96, 14)
-    W.shareBtn:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -12, 0)
+    -- 24px tall; kept clear of the window's resize grip in the bottom-right corner.
+    W.shareBtn = Skin:Button(content, "Sharing: Off", 104, Skin.CONTROL_H)
+    W.shareBtn:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -14, 0)
     W.shareBtn:SetScript("OnClick", function() ns:SetSharing(not ns:IsSharingEnabled()) end)
     W.shareBtn:HookScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
@@ -1444,8 +1444,8 @@ local function createWindow()
     end)
     W.shareBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
     W.status = Skin:Text(content, Skin.SIZE.small, "textDim")
-    W.status:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 2, 0)
-    W.status:SetPoint("RIGHT", W.shareBtn, "LEFT", -12, 0)
+    W.status:SetPoint("LEFT", content, "BOTTOMLEFT", 2, FOOTER_H / 2)
+    W.status:SetPoint("RIGHT", W.shareBtn, "LEFT", -Skin.GAP - 4, 0)
     W.status:SetWordWrap(false)
 
     createDetail(content)

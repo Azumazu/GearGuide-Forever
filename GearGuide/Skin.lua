@@ -202,9 +202,14 @@ local function updateButton(b)
     end
 end
 
+-- Control sizing: every clickable control is at least CONTROL_H tall; outlined buttons get
+-- BUTTON_PAD px of horizontal text padding. width = nil sizes the button to its text.
+Skin.CONTROL_H, Skin.BUTTON_PAD, Skin.GAP = 24, 10, 8
+
 function Skin:Button(parent, text, width, height)
     local b = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    b:SetSize(width or 80, height or 20)
+    b:SetSize(width or 80, height or Skin.CONTROL_H)
+    b.autoWidth = (width == nil)
     self:SetBackdrop(b, "button", "edge")
 
     -- HIGHLIGHT layer textures show automatically while the mouse is over the button,
@@ -223,14 +228,23 @@ function Skin:Button(parent, text, width, height)
     bar:Hide()
     b.activeBar = bar
 
+    local pad = Skin.BUTTON_PAD
     local fs = self:Text(b, Skin.SIZE.normal, "text")
-    fs:SetPoint("LEFT", 4, 0)
-    fs:SetPoint("RIGHT", -4, 0)
+    fs:SetPoint("LEFT", pad, 0)
+    fs:SetPoint("RIGHT", -pad, 0)
     fs:SetJustifyH("CENTER")
     fs:SetWordWrap(false)
     b.text = fs
 
-    function b:SetText(t) self.text:SetText(t or "") end
+    function b:SetText(t)
+        self.text:SetText(t or "")
+        if self.autoWidth then self:FitText() end
+    end
+    -- Width = text + padding on both sides (at least minW).
+    function b:FitText(minW)
+        local w = math.ceil(self.text:GetStringWidth() or 0) + pad * 2
+        self:SetWidth(math.max(minW or 0, w))
+    end
     function b:GetText() return self.text:GetText() end
     function b:SetActive(on)
         self.active = on and true or false
@@ -240,10 +254,10 @@ function Skin:Button(parent, text, width, height)
 
     -- Small press feedback: nudge the label while held.
     b:SetScript("OnMouseDown", function(self)
-        if isEnabled(self) then self.text:SetPoint("LEFT", 5, -1); self.text:SetPoint("RIGHT", -3, -1) end
+        if isEnabled(self) then self.text:SetPoint("LEFT", pad + 1, -1); self.text:SetPoint("RIGHT", -pad + 1, -1) end
     end)
     b:SetScript("OnMouseUp", function(self)
-        self.text:SetPoint("LEFT", 4, 0); self.text:SetPoint("RIGHT", -4, 0)
+        self.text:SetPoint("LEFT", pad, 0); self.text:SetPoint("RIGHT", -pad, 0)
     end)
     b:SetScript("OnEnable", updateButton)
     b:SetScript("OnDisable", updateButton)
@@ -254,7 +268,7 @@ function Skin:Button(parent, text, width, height)
 end
 
 function Skin:IconButton(parent, glyph, size)
-    size = size or 16
+    size = size or 20
     local b = self:Button(parent, glyph, size, size)
     applyFont(b.text, math.max(9, math.floor(size * 0.75 + 0.5)))
     b.text:ClearAllPoints()
@@ -290,18 +304,18 @@ end
 ---------------------------------------------------------------------------
 function Skin:EditBox(parent, width, numeric)
     local eb = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-    eb:SetSize(width or 120, 20)
+    eb:SetSize(width or 120, Skin.CONTROL_H)
     eb:SetAutoFocus(false)
     eb:SetMultiLine(false)
     applyFont(eb, Skin.SIZE.normal)
     setTextColor(eb, "text")
-    eb:SetTextInsets(5, 5, 0, 0)
+    eb:SetTextInsets(8, 8, 0, 0)
     if numeric then eb:SetNumeric(true) end
     self:SetBackdrop(eb, "panel", "edge")
 
     local ph = self:Text(eb, Skin.SIZE.normal, "textDim")
-    ph:SetPoint("LEFT", 6, 0)
-    ph:SetPoint("RIGHT", -5, 0)
+    ph:SetPoint("LEFT", 9, 0)
+    ph:SetPoint("RIGHT", -8, 0)
     ph:SetWordWrap(false)
     ph:Hide()
     eb.placeholder = ph
@@ -333,17 +347,17 @@ end
 ---------------------------------------------------------------------------
 function Skin:Checkbox(parent, label)
     local cb = CreateFrame("Button", nil, parent)
-    cb:SetHeight(16)
+    cb:SetHeight(Skin.CONTROL_H)  -- box + label are one button: the label is clickable too
 
     local box = CreateFrame("Frame", nil, cb, "BackdropTemplate")
-    box:SetSize(14, 14)
+    box:SetSize(18, 18)
     box:SetPoint("LEFT", 0, 0)
     self:SetBackdrop(box, "panel", "borderStrong")
     cb.box = box
 
     local mark = box:CreateTexture(nil, "ARTWORK")
-    mark:SetPoint("TOPLEFT", 3, -3)
-    mark:SetPoint("BOTTOMRIGHT", -3, 3)
+    mark:SetPoint("TOPLEFT", 4, -4)
+    mark:SetPoint("BOTTOMRIGHT", -4, 4)
     setTex(mark, "accent")
     mark:Hide()
     cb.mark = mark
@@ -354,12 +368,12 @@ function Skin:Checkbox(parent, label)
     setTex(hl, "hover")
 
     local fs = self:Text(cb, Skin.SIZE.normal, "text")
-    fs:SetPoint("LEFT", box, "RIGHT", 5, 0)
+    fs:SetPoint("LEFT", box, "RIGHT", 6, 0)
     fs:SetWordWrap(false)
     cb.text = fs
 
     local function resize()
-        cb:SetWidth(14 + 5 + math.ceil(fs:GetStringWidth() or 0) + 2)
+        cb:SetWidth(18 + 6 + math.ceil(fs:GetStringWidth() or 0) + 4)
     end
     function cb:SetText(t) fs:SetText(t or ""); resize() end
     function cb:GetText() return fs:GetText() end
@@ -411,17 +425,17 @@ function Skin:ResizeGrip(frame, minW, minH, maxW, maxH, onResized)
     setBounds(frame, minW, minH, maxW, maxH)
 
     local grip = CreateFrame("Button", nil, frame)
-    grip:SetSize(11, 11)
+    grip:SetSize(15, 15)
     grip:SetPoint("BOTTOMRIGHT", -1, 1)
     grip:SetFrameLevel(frame:GetFrameLevel() + 10)
 
     -- Triangle of six 2px dots in the corner.
     grip.dots = {}
-    local spots = { {0, 0}, {3, 0}, {6, 0}, {0, 3}, {3, 3}, {0, 6} }
+    local spots = { {0, 0}, {4, 0}, {8, 0}, {0, 4}, {4, 4}, {0, 8} }
     for i, p in ipairs(spots) do
         local d = grip:CreateTexture(nil, "OVERLAY")
         d:SetSize(2, 2)
-        d:SetPoint("BOTTOMRIGHT", -1 - p[1], 1 + p[2])
+        d:SetPoint("BOTTOMRIGHT", -2 - p[1], 2 + p[2])
         setTex(d, "textDim")
         grip.dots[i] = d
     end
@@ -503,10 +517,10 @@ function Skin:WindowBackdrop(f, opts)
 end
 
 -- Flat text tab: dim label, brighter on hover, copper text + 2px copper underline when active.
--- t:SetActive(on), t:IsActive(); width follows the label (+ padding).
+-- t:SetActive(on), t:IsActive(); width follows the label (+ 15px padding per side).
 function Skin:Tab(parent, text, height)
     local t = CreateFrame("Button", nil, parent)
-    t:SetHeight(height or 24)
+    t:SetHeight(height or 30)
     t:RegisterForClicks("LeftButtonUp")
     local fs = self:Text(t, Skin.SIZE.header, "textDim")
     fs:SetPoint("CENTER", 0, 1)
@@ -526,7 +540,7 @@ function Skin:Tab(parent, text, height)
     end
     function t:SetText(s)
         fs:SetText(s or "")
-        self:SetWidth(math.ceil(fs:GetStringWidth() or 0) + 24)
+        self:SetWidth(math.ceil(fs:GetStringWidth() or 0) + 30)  -- 15px padding per side
     end
     function t:GetText() return fs:GetText() end
     function t:SetActive(on) self.active = on and true or false; look(self) end
@@ -590,8 +604,8 @@ function Skin:CreateWindow(name, opts)
         title:SetPoint("LEFT", mark, "RIGHT", 6, 0)
     end
 
-    local close = self:IconButton(header, "x", 18)
-    close:SetPoint("RIGHT", -3, 0)
+    local close = self:IconButton(header, "x", headerH >= 32 and Skin.CONTROL_H or 18)
+    close:SetPoint("RIGHT", headerH >= 32 and -8 or -3, 0)
     close:SetScript("OnClick", function() f:Hide() end)
     f.closeButton = close
     if f.subtitle then
@@ -939,15 +953,16 @@ function Skin:StyleStar(tex, on, hover)
     end
 end
 
--- Small star toggle. b:SetFavorite(on); b.onToggle = function(b) end is called on click;
--- b.tooltip = {title, line} (optional).
-function Skin:StarButton(parent, size)
+-- Small star toggle. size = hit area, texSize = drawn star (default = size).
+-- b:SetFavorite(on); b.onToggle = function(b) end is called on click; b.tooltip = {title, line}.
+function Skin:StarButton(parent, size, texSize)
     size = size or 16
     local b = CreateFrame("Button", nil, parent)
     b:SetSize(size, size)
     b:RegisterForClicks("LeftButtonUp")
     local t = b:CreateTexture(nil, "OVERLAY")
-    t:SetAllPoints()
+    t:SetSize(texSize or size, texSize or size)
+    t:SetPoint("CENTER")
     t:SetTexture(Skin.STAR)
     b.tex, b.on, b.hovered, b.onToggle, b.tooltip = t, false, false, false, false
 
@@ -1122,7 +1137,7 @@ end
 -- }
 -- Item extras (optional): iconCoords {l,r,t,b} for atlas-style icons, note = dim right-aligned menu text.
 -- dd:Refresh() re-reads getValue/getItems for the label; dd:Open(), dd:Close(), dd:IsOpen().
-local DD_H, DD_ITEM_H, DD_PAD, DD_ICON, DD_MAX_W = 22, 20, 3, 14, 340
+local DD_H, DD_ITEM_H, DD_PAD, DD_ICON, DD_MAX_W = 24, 22, 3, 14, 340
 local ddMenu   -- one shared menu: only one dropdown can be open at a time
 
 local function inCombat()

@@ -4,7 +4,7 @@ local _, ns = ...
 -- Public: ns:ShowMini(), ns:HideMini(), ns:ToggleMini(), ns:SetMiniCount(n), ns:RefreshMini()
 
 local WIDTH = 260
-local HEADER_H = 20
+local HEADER_H = 28   -- fits the 20px header buttons with 4px margins
 local ROW_H = 24      -- bar rows (Skin:BarRow): 3px quality bar, 24px icon
 local ROW_GAP = 2
 local PITCH = ROW_H + ROW_GAP
@@ -240,23 +240,23 @@ local function createFrame()
     headerBg:SetColorTexture(color("header"))
 
     local title = ns.Skin:Text(header, 12, "accent")
-    title:SetPoint("LEFT", header, "LEFT", 6, 0)
+    title:SetPoint("LEFT", header, "LEFT", 8, 0)
     title:SetText("GearGuide")
     f.title = title
 
-    local BTN = 16
+    local BTN = 20
     local close = ns.Skin:IconButton(header, "x", BTN)
-    close:SetPoint("RIGHT", header, "RIGHT", -2, 0)
+    close:SetPoint("RIGHT", header, "RIGHT", -4, 0)
     close:SetScript("OnClick", function() ns:HideMini() end)
     addTooltip(close, "Close", function() return "Reopen with /gg mini or Shift-click the minimap icon." end)
 
     local open = ns.Skin:IconButton(header, ">", BTN)
-    open:SetPoint("RIGHT", close, "LEFT", -2, 0)
+    open:SetPoint("RIGHT", close, "LEFT", -4, 0)
     open:SetScript("OnClick", function() ns:ToggleWindow() end)
     addTooltip(open, "Open main window")
 
     local done = ns.Skin:IconButton(header, "", BTN)
-    done:SetPoint("RIGHT", open, "LEFT", -2, 0)
+    done:SetPoint("RIGHT", open, "LEFT", -4, 0)
     local doneIcon = done:CreateTexture(nil, "OVERLAY")
     doneIcon:SetTexture(READY)
     doneIcon:SetSize(BTN - 4, BTN - 4)
@@ -271,19 +271,19 @@ local function createFrame()
     end)
 
     local plus = ns.Skin:IconButton(header, "+", BTN)
-    plus:SetPoint("RIGHT", done, "LEFT", -6, 0)
+    plus:SetPoint("RIGHT", done, "LEFT", -8, 0)
     plus:SetScript("OnClick", function() ns:SetMiniCount(GearGuideDB.mini.count + 1) end)
     addTooltip(plus, "Show more items")
     f.plus = plus
 
     local countText = ns.Skin:Text(header, FONT_SIZE, "text")
-    countText:SetPoint("RIGHT", plus, "LEFT", -2, 0)
+    countText:SetPoint("RIGHT", plus, "LEFT", -4, 0)
     countText:SetWidth(18)
     countText:SetJustifyH("CENTER")
     f.countText = countText
 
     local minus = ns.Skin:IconButton(header, "-", BTN)
-    minus:SetPoint("RIGHT", countText, "LEFT", -2, 0)
+    minus:SetPoint("RIGHT", countText, "LEFT", -4, 0)
     minus:SetScript("OnClick", function() ns:SetMiniCount(GearGuideDB.mini.count - 1) end)
     addTooltip(minus, "Show fewer items")
     f.minus = minus
