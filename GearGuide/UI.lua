@@ -17,10 +17,13 @@ local BULLET = "\226\128\162 "        -- "• "
 local PLUSMINUS = "\194\177"          -- "±"
 
 -- List column geometry. Left: 3px quality bar, 28px icon, name. Right (anchored to the row's
--- right edge): score, completion mark, req. level, then slot and source as optional columns.
+-- right edge): favorite star, score, completion mark, req. level, then slot and source as
+-- optional columns.
 local NAME_X = 3 + 1 + (ROW_H - ROW_GAP) + 7
+local STAR_W = 16
+local SCORE_X = -(6 + STAR_W + 4)     -- score's right edge, left of the star
 local SCORE_W, MARK_W, LVL_W, SLOT_W = 70, 24, 24, 62
-local RIGHT_W = 6 + SCORE_W + 4 + MARK_W + 4 + LVL_W
+local RIGHT_W = -SCORE_X + SCORE_W + 4 + MARK_W + 4 + LVL_W
 local NAME_MIN = 105                  -- the name keeps at least this; source goes first, then slot
 local SOURCE_MIN, SOURCE_MAX = 130, 280
 local NAME_SIZE = 13
@@ -62,6 +65,7 @@ local WEAPON_TYPES = { [0] = "Axe", [1] = "Axe", [2] = "Bow", [3] = "Gun", [4] =
 
 local frame, list
 local updateDetail     -- forward (defined in the detail panel section)
+local toggleFavorite   -- forward (defined after the detail panel section)
 local W = {}           -- widgets
 local rowFrames = {}   -- every row frame the list has created (for the flash highlight)
 local bodyLines = {}   -- detail panel FontString pool
@@ -73,7 +77,7 @@ local state = {
     flashId = nil, flashUntil = 0,
     filter = {
         text = "", class = nil, spec = nil, slot = 0, minL = nil, maxL = nil,
-        quality = 1, sort = 1, usable = true, hideDone = false,
+        quality = 1, sort = 1, usable = true, hideDone = false, favOnly = false,
     },
 }
 
@@ -283,7 +287,7 @@ local function makeColumns(r, nameSize, nameX)
     r.colKey = false
 
     r.score = Skin:Text(r, Skin.SIZE.normal, "text")
-    r.score:SetPoint("RIGHT", r, "RIGHT", -6, 0)
+    r.score:SetPoint("RIGHT", r, "RIGHT", SCORE_X, 0)
     r.score:SetWidth(SCORE_W)
     r.score:SetJustifyH("RIGHT")
     r.score:SetWordWrap(false)
@@ -336,6 +340,15 @@ local function createRow(row)
     row.hLink:SetPoint("RIGHT", row.score, "LEFT", -6, 0)
     row.hLink:SetWordWrap(false)
 
+    -- Favorite toggle at the far right (a child button: clicking it doesn't select the row).
+    row.star = Skin:StarButton(row, STAR_W)
+    row.star:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+    row.star.tooltip = { "Favorite", "Mark this as an item you're going for. Alt-click a row also toggles." }
+    row.star.onToggle = function()
+        local d = row.data
+        if d and d.kind == "item" then toggleFavorite(d.id) end
+    end
+
     row:HookScript("OnSizeChanged", function(self, w) applyColumns(self, w) end)
 end
 
@@ -359,8 +372,10 @@ local function fillRow(row, d)
     row.kind = d.kind
     applyColumns(row, row:GetWidth())
     row.flash:SetAlpha(0)
+    row.star:SetShown(d.kind == "item")
     if d.kind == "item" then
         local item = d.item
+        row.star:SetFavorite(ns:IsFavorite(d.id))
         row:SetBarStyle("item")
         row:SetBarQuality(item.q)
         row:SetBarIcon(rowIcon(d.id))
@@ -378,7 +393,13 @@ local function fillRow(row, d)
         setItemColumnsShown(row, false)
         setRowDone(row, false)
         row.hLabel:SetText(d.label)
-        if d.equippedLink then
+        if d.fav then
+            -- "Favorites" section header on the Recommended tab
+            row:SetBarIcon(ns.Skin.STAR, { 0, 1, 0, 1 })
+            row:SetBarQuality(nil, "accent")
+            row.hLink:SetText(ns.Skin:Hex("textDim") .. string.format("%d chosen", d.count or 0)
+                .. DOT .. "click a star or Alt-click a row to change|r")
+        elseif d.equippedLink then
             local eid = ns.LinkToId(d.equippedLink)
             row:SetBarIcon(eid and rowIcon(eid) or ns.QUESTION_ICON)
             row:SetBarQuality((select(3, ns.GetItemInfo(d.equippedLink))), "accent")
@@ -437,7 +458,9 @@ end
 local function rowOnClick(row, d, button)
     if button ~= "LeftButton" then return end
     if d.kind == "item" then
-        if IsShiftKeyDown() or IsControlKeyDown() then
+        if IsAltKeyDown and IsAltKeyDown() then
+            toggleFavorite(d.id)
+        elseif IsShiftKeyDown() or IsControlKeyDown() then
             handleModifiedClick(itemLink(d.id))
         else
             selectItem(d.id, d.class, d.spec)
@@ -497,6 +520,31 @@ local function buildRecommendedRows()
 
     local rows = {}
     emptyDatabaseNote(rows)
+
+    -- Favorites section: everything the player has starred, in the order they picked it,
+    -- scored against what's equipped in its slot.
+    local favs = ns:GetFavorites()
+    if #favs > 0 then
+        local weights, ctx = ns:GetScoringContext()
+        local eqScore = {}
+        for _, g in ipairs(rec.groups) do eqScore[g.key] = g.equippedScore or 0 end
+        local favRows = {}
+        for _, id in ipairs(favs) do
+            local item = ns:GetItem(id)
+            if item then
+                local score = ns:Score(item, weights, ctx)
+                local key = ns.EQUIPLOC_GROUP[item.eq]
+                favRows[#favRows + 1] = { kind = "item", id = id, item = item, score = score,
+                    delta = key and (score - (eqScore[key] or 0)) or nil, class = class }
+            end
+        end
+        rows[#rows + 1] = { kind = "header", fav = true, label = "Favorites", count = #favs }
+        if #favRows == 0 then
+            rows[#rows + 1] = { kind = "note", text = "Your favorites aren't in the item database yet" }
+        end
+        for _, r in ipairs(favRows) do rows[#rows + 1] = r end
+    end
+
     for _, g in ipairs(rec.groups) do
         rows[#rows + 1] = { kind = "header", key = g.key, label = g.label,
             equippedLink = g.equippedLink, equippedScore = g.equippedScore }
@@ -521,13 +569,19 @@ local function buildBrowserRows()
     local groupKey = f.slot > 0 and ns.SLOT_GROUPS[f.slot].key or nil
     local minQ = QUALITIES[f.quality].q
 
+    -- Favorites only: just the starred items, and the level range is ignored so a far-off
+    -- favorite still shows (the other filters still apply).
+    local ids = f.favOnly and ns:GetFavorites() or ns:AllItemIds()
+    local minL = not f.favOnly and f.minL or nil
+    local maxL = not f.favOnly and f.maxL or nil
+
     local rows = {}
-    for _, id in ipairs(ns:AllItemIds()) do
+    for _, id in ipairs(ids) do
         local item = ns:GetItem(id)
         local group = item and ns.EQUIPLOC_GROUP[item.eq]
         if group and (not groupKey or group == groupKey) and (item.q or 1) >= minQ then
             local eff = ns.EffectiveLevel(item)
-            if (not f.minL or eff >= f.minL) and (not f.maxL or eff <= f.maxL)
+            if (not minL or eff >= minL) and (not maxL or eff <= maxL)
                 and (text == "" or (item.n and item.n:lower():find(text, 1, true)))
                 and (not f.usable or ns:IsUsable(item, f.class, level))
                 and (not f.hideDone or ns:GetCompletion(id, f.class) ~= "done") then
@@ -560,7 +614,11 @@ local function buildBrowserRows()
     W.count:SetText(string.format("%d item%s", #rows, #rows == 1 and "" or "s"))
     if #rows == 0 then
         emptyDatabaseNote(rows)
-        if #rows == 0 then rows[1] = { kind = "note", text = "No items match these filters." } end
+        if #rows == 0 and f.favOnly and #ids == 0 then
+            rows[1] = { kind = "note", text = "No favorites yet: click the star on a row, or Alt-click it." }
+        elseif #rows == 0 then
+            rows[1] = { kind = "note", text = "No items match these filters." }
+        end
     end
     return rows
 end
@@ -607,7 +665,48 @@ local function updateBodyBar()
     bar:Show()
 end
 
+-- Clickable source lines: an invisible button over each source line that has a map location.
+local sourceButtons, sourceButtonCount = {}, 0
+
+local function attachSourceButton(fs, source)
+    sourceButtonCount = sourceButtonCount + 1
+    local b = sourceButtons[sourceButtonCount]
+    if not b then
+        b = CreateFrame("Button", nil, W.bodyChild)
+        b.hl = b:CreateTexture(nil, "HIGHLIGHT")
+        b.hl:SetAllPoints()
+        b.hl:SetColorTexture(rgba("hover"))
+        b:SetScript("OnClick", function(self) ns:ShowSourceOnMap(self.source) end)
+        b:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+            GameTooltip:AddLine(self.source.n or "?")
+            GameTooltip:AddLine(ns.FormatSource(self.source), 1, 1, 1, true)
+            local loc = self.source.loc
+            local entrance = loc and loc[1] and loc[1].e
+            GameTooltip:AddLine(entrance and "Click: show the dungeon entrance on the map" or "Click: show on the map",
+                0.4, 1, 0.6)
+            if loc and #loc > 1 then
+                GameTooltip:AddLine(string.format("Found on %d maps; click again for the next one.", #loc), 0.7, 0.7, 0.7)
+            end
+            GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        sourceButtons[sourceButtonCount] = b
+    end
+    b.source = source
+    b:ClearAllPoints()
+    b:SetPoint("TOPLEFT", fs, "TOPLEFT", -2, 1)
+    b:SetPoint("BOTTOMRIGHT", fs, "BOTTOMRIGHT", 2, -1)
+    b:Show()
+end
+
+local function hideUnusedSourceButtons()
+    for i = sourceButtonCount + 1, #sourceButtons do sourceButtons[i]:Hide() end
+    sourceButtonCount = 0
+end
+
 local function bodyFinish()
+    hideUnusedSourceButtons()
     for i = bodyCount + 1, #bodyLines do bodyLines[i]:Hide() end
     W.bodyChild:SetHeight(math.max(1, bodyY))
     updateBodyBar()
@@ -641,11 +740,24 @@ local function equippedBaseline(id, item, weights, ctx)
     return base, baseLink, isEquipped
 end
 
+-- "Favorite" / "Unfavorite" button under the detail panel's item name.
+local function updateFavButton()
+    local b, sel = W.favBtn, state.selected
+    if not b then return end
+    if not sel then b:Hide() return end
+    local on = ns:IsFavorite(sel.id)
+    b:SetText(on and "Unfavorite" or "Favorite")
+    b:SetActive(on)
+    ns.Skin:StyleStar(b.star, on, false)
+    b:Show()
+end
+
 function updateDetail()
     if not W.detail then return end
     local sel = state.selected
     local id = sel and sel.id
     local item = id and ((sel.link and ns:ItemFromLink(sel.link)) or ns:GetItem(id) or ns:ItemFromLink("item:" .. id))
+    updateFavButton()
     if not id then
         W.detailEmpty:Show()
         W.icon:Hide(); W.dName:Hide(); W.bodyScroll:Hide(); W.bodyBar:Hide()
@@ -753,14 +865,32 @@ function updateDetail()
         bodyAdd("Source unknown. Run GearGuideTools/update_db.py, or loot / see the item in game to learn it.",
             small, "textDim", 1, 6)
     else
+        local onMap = 0
         for _, s in ipairs(sources) do
-            bodyAdd(BULLET .. ns.FormatSource(s), small, "text", 2, 6)
+            if ns.HasLocation(s) then
+                onMap = onMap + 1
+                local icon = ns.MapIconFor and ns.MapIconFor(s)
+                bodyAdd((icon and ("|T" .. icon .. ":12:12|t ") or BULLET) .. ns.FormatSource(s), small, "text", 2, 6)
+                attachSourceButton(bodyLines[bodyCount], s)
+            else
+                bodyAdd(BULLET .. ns.FormatSource(s), small, "textDim", 2, 6)
+            end
         end
+        if onMap > 0 then bodyAdd("Click a source to show it on the map.", small, "textDim", 4, 6) end
     end
 
     bodyAdd("Item ID " .. id .. DOT .. "Shift-click icon: link" .. DOT .. "Ctrl-click: preview",
         small, "textDim", 10)
     bodyFinish()
+end
+
+-- Toggles a favorite and updates what's on screen right away (stars on the visible rows, the
+-- detail button); Core's RequestRefresh then rebuilds the lists (Favorites section, mini tracker).
+function toggleFavorite(id)
+    local on = ns:ToggleFavorite(id)
+    if list and frame and frame:IsShown() then list:Refresh() end
+    updateFavButton()
+    return on
 end
 
 ---------------------------------------------------------------------------
@@ -858,6 +988,7 @@ local function syncBrowserControls()
     W.qualitySel:Refresh(); W.sortSel:Refresh()
     W.usableCb:SetChecked(f.usable)
     W.hideCb:SetChecked(f.hideDone)
+    W.favCb:SetChecked(f.favOnly)
 end
 
 local function createBrowseBar(parent)
@@ -980,6 +1111,8 @@ local function createBrowseBar(parent)
     W.usableCb.onToggle = function(_, checked) f.usable = checked; filterChanged() end
     W.hideCb = Skin:Checkbox(bar, "Hide acquired")
     W.hideCb.onToggle = function(_, checked) f.hideDone = checked; filterChanged() end
+    W.favCb = Skin:Checkbox(bar, "Favorites only")
+    W.favCb.onToggle = function(_, checked) f.favOnly = checked; filterChanged() end
 
     W.count = Skin:Text(bar, Skin.SIZE.small, "textDim")
     W.count:SetWidth(80)
@@ -991,6 +1124,7 @@ local function createBrowseBar(parent)
         { f = lvl, yo = 1, extra = 4 },
         { f = W.qualitySel }, { f = W.sortSel },
         { f = W.usableCb, yo = 3, extra = 6 }, { f = W.hideCb, yo = 3, extra = 6 },
+        { f = W.favCb, yo = 3, extra = 6 },
         { f = W.count, yo = 5, width = function() return 80 end },
     }
     bar:SetScript("OnSizeChanged", layoutBrowseBar)
@@ -1010,7 +1144,7 @@ local function createRecBar(parent)
     hint:SetPoint("RIGHT", bar, "RIGHT", -2, 0)
     hint:SetWordWrap(false)
     hint:SetText("Best picks per slot for your level range. Green = upgrade over equipped, "
-        .. "orange level = not equippable yet.")
+        .. "orange level = not equippable yet. Star an item to pin it under Favorites.")
     W.recBar = bar
     return bar
 end
@@ -1095,8 +1229,34 @@ local function createDetail(content)
     if name.SetMaxLines then name:SetMaxLines(2) end
     W.dName = name
 
+    -- Favorite toggle under the icon/name (star + label; accent "active" look when favorited).
+    local fav = Skin:Button(detail, "Favorite", 104, 18)
+    fav:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", 0, -6)
+    fav.star = fav:CreateTexture(nil, "OVERLAY")
+    fav.star:SetSize(14, 14)
+    fav.star:SetPoint("LEFT", 6, 0)
+    fav.star:SetTexture(Skin.STAR)
+    fav.text:ClearAllPoints()
+    fav.text:SetPoint("LEFT", fav.star, "RIGHT", 4, 0)
+    fav.text:SetPoint("RIGHT", -6, 0)
+    fav:SetScript("OnMouseDown", nil)  -- keep the label anchored next to the star
+    fav:SetScript("OnMouseUp", nil)
+    fav:SetScript("OnClick", function()
+        if state.selected then toggleFavorite(state.selected.id) end
+    end)
+    fav:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine("Favorite", 1, 1, 1)
+        GameTooltip:AddLine("Favorites are listed first on the Recommended tab and in the mini tracker.",
+            0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    fav:SetScript("OnLeave", hideTooltip)
+    fav:Hide()
+    W.favBtn = fav
+
     local sf = CreateFrame("ScrollFrame", nil, detail)
-    sf:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", 0, -8)
+    sf:SetPoint("TOPLEFT", fav, "BOTTOMLEFT", 0, -6)
     sf:SetPoint("BOTTOMRIGHT", detail, "BOTTOMRIGHT", -12, 8)
     local child = CreateFrame("Frame", nil, sf)
     child:SetSize(BODY_W, 1)
@@ -1148,6 +1308,11 @@ local function createListBox(left)
     ch.lvl:SetText("Req")
     ch.score:SetText("Score")
     ch.source:SetText("Source")
+    local chStar = ch:CreateTexture(nil, "ARTWORK")  -- column hint for the favorite stars
+    chStar:SetSize(12, 12)
+    chStar:SetPoint("RIGHT", ch, "RIGHT", -8, 0)
+    chStar:SetTexture(Skin.STAR)
+    Skin:StyleStar(chStar, false, true)
     ch:SetScript("OnSizeChanged", function(self, w) applyColumns(self, w) end)
     local line = Skin:Divider(ch, "border")
     line:SetPoint("BOTTOMLEFT")
@@ -1323,6 +1488,7 @@ local function revealInBrowser(id, item)
         end
     end
     if f.hideDone and ns:GetCompletion(id, f.class) == "done" then f.hideDone = false end
+    if f.favOnly and not ns:IsFavorite(id) then f.favOnly = false end
     syncBrowserControls()
 end
 
@@ -1392,7 +1558,8 @@ function ns:ShowItem(id)
         if inRec then break end
     end
 
-    if inRec then
+    -- Favorites are listed in the Recommended tab's Favorites section.
+    if inRec or (item and self:IsFavorite(id)) then
         applyTab("recommended")
         state.selected = { id = id, class = self:GetPlayerClass() }  -- spec nil = player's spec
     else

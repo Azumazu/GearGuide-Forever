@@ -373,21 +373,36 @@ API_HEADER = [
 ]
 
 
-DB_FORMAT = 2  # 2 = item.src holds indices into GearGuide_Data.sources
+# 2 = item.src holds indices into GearGuide_Data.sources
+# 3 = a source may also hold "l", an index into GearGuide_Data.locs (map locations for the world map)
+DB_FORMAT = 3
+SOURCE_KEYS = ("t", "n", "z", "l", "k")
 
 
-def intern_sources(items: dict[int, dict]) -> list[dict]:
-    """Stores each distinct source once; item["src"] becomes a list of 1-based indices."""
+def intern_sources(items: dict[int, dict]) -> tuple[list[dict], list[list]]:
+    """Stores each distinct source and location once; item["src"] becomes a list of 1-based indices.
+
+    A source's "loc" ([{m: uiMapID, p: [x1, y1, ...], e: dungeonArea?}, ...]) moves into the
+    location pool and is replaced by "l" (its index)."""
     pool: list[dict] = []
     index: dict[tuple, int] = {}
+    locs: list[list] = []
+    loc_index: dict[str, int] = {}
     for iid in sorted(items):
         refs = []
         for s in items[iid].get("src") or []:
             if not isinstance(s, dict):
                 continue
-            key = (s.get("t"), s.get("n"), s.get("z"))
+            l = None
+            if s.get("loc"):
+                lk = json.dumps(s["loc"], sort_keys=True)
+                if lk not in loc_index:
+                    locs.append(s["loc"])
+                    loc_index[lk] = len(locs)
+                l = loc_index[lk]
+            key = (s.get("t"), s.get("n"), s.get("z"), l, s.get("k"))
             if key not in index:
-                pool.append({k: v for k, v in zip(("t", "n", "z"), key) if v})
+                pool.append({k: v for k, v in zip(SOURCE_KEYS, key) if v})
                 index[key] = len(pool)
             if index[key] not in refs:
                 refs.append(index[key])
@@ -395,17 +410,19 @@ def intern_sources(items: dict[int, dict]) -> list[dict]:
             items[iid]["src"] = refs
         else:
             items[iid].pop("src", None)
-    return pool
+    return pool, locs
 
 
 def write_lua(out: Path, items: dict[int, dict], meta: dict, header: list[str] | None = None) -> None:
     items = {iid: dict(rec) for iid, rec in items.items()}  # don't mutate the caller's records
-    pool = intern_sources(items)
+    pool, locs = intern_sources(items)
     meta = {**meta, "format": DB_FORMAT}
     lines = list(header or API_HEADER) + [
-        f"GearGuide_Data = {{ meta = {lua_val(meta)}, items = {{}}, sources = {{}} }}",
-        "local S = GearGuide_Data.sources",
+        f"GearGuide_Data = {{ meta = {lua_val(meta)}, items = {{}}, sources = {{}}, locs = {{}} }}",
+        "local L = GearGuide_Data.locs",
     ]
+    lines += [f"L[{i}]={lua_val(loc)}" for i, loc in enumerate(locs, 1)]
+    lines.append("local S = GearGuide_Data.sources")
     lines += [f"S[{i}]={lua_val(s)}" for i, s in enumerate(pool, 1)]
     lines.append("local I = GearGuide_Data.items")
     lines += [f"I[{iid}]={lua_val(items[iid])}" for iid in sorted(items)]

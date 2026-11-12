@@ -47,6 +47,8 @@ function ns:ShowItemTooltip(owner, id, info)
         tip:AddLine(line, 0.4, 1, 0.6)
     end
 
+    if self.IsFavorite and self:IsFavorite(id) then tip:AddLine("Favorite", 1, 0.82, 0) end
+
     local state, have, need = self:GetCompletion(id, info.class or self:GetPlayerClass())
     if state == "done" then
         tip:AddLine(need > 1 and string.format("Acquired (%d/%d)", have, need) or "Acquired", 0.3, 0.9, 0.3)
@@ -59,7 +61,18 @@ function ns:ShowItemTooltip(owner, id, info)
         tip:AddLine("Source unknown. Run the updater, or loot/see the item in game.", 0.6, 0.6, 0.6, true)
     else
         tip:AddLine("Where to get it:", 1, 0.82, 0)
-        for _, s in ipairs(sources) do tip:AddLine("  " .. ns.FormatSource(s), 1, 1, 1, true) end
+        local shown, hasMap = 0, false
+        for _, s in ipairs(sources) do
+            hasMap = hasMap or ns.HasLocation(s)
+            if shown < 8 then
+                tip:AddLine("  " .. ns.FormatSource(s), 1, 1, 1, true)
+                shown = shown + 1
+            end
+        end
+        if #sources > shown then
+            tip:AddLine(string.format("  ...and %d more (see the item in the GearGuide window)", #sources - shown), 0.6, 0.6, 0.6)
+        end
+        if hasMap then tip:AddLine("Click a source in the GearGuide window to show it on the map.", 0.5, 0.5, 0.5, true) end
     end
     tip:Show()
 end

@@ -78,6 +78,10 @@ end
 local function rowOnClick(row)
     local pick = row.pick
     if not pick then return end
+    if IsAltKeyDown and IsAltKeyDown() then
+        ns:ToggleFavorite(pick.id)  -- Core refreshes the tracker (favorites are listed first)
+        return
+    end
     if IsShiftKeyDown() then
         local link = select(2, ns.GetItemInfo(pick.id))
         if link and ChatEdit_InsertLink then ChatEdit_InsertLink(link) end
@@ -111,12 +115,20 @@ local function createRow(parent, index)
     row.slot:SetJustifyH("RIGHT")
     row.slot:SetWordWrap(false)
 
+    row.contentX = row.barContentX or (ROW_H + 11)
+
+    -- Favorite star in front of the name (only on favorite rows; display only).
+    row.star = row:CreateTexture(nil, "OVERLAY")
+    row.star:SetSize(12, 12)
+    row.star:SetPoint("LEFT", row, "LEFT", row.contentX - 2, 0)
+    row.star:SetTexture(ns.Skin.STAR)
+    row.star:Hide()
+
     row.name = ns.Skin:Text(row, FONT_SIZE + 1)
-    row.name:SetPoint("LEFT", row, "LEFT", row.barContentX or (ROW_H + 11), 0)
-    row.name:SetPoint("RIGHT", row.slot, "LEFT", -4, 0)
     row.name:SetJustifyH("LEFT")
     row.name:SetWordWrap(false)
     row.name:SetShadowColor(0, 0, 0, 1)
+    row.nameShifted = "init"  -- forces the first anchor in fillRow
 
     row:SetScript("OnEnter", rowOnEnter)
     row:SetScript("OnLeave", rowOnLeave)
@@ -149,6 +161,14 @@ local function fillRow(row, pick)
     row:SetBarIcon(rowIcon(pick.id))
     local done = ns:GetCompletion(pick.id, ns:GetPlayerClass()) == "done"
     row:SetBarDimmed(done)
+    local fav = pick.favorite and true or false
+    row.star:SetShown(fav)
+    if row.nameShifted ~= fav then  -- make room for the star
+        row.nameShifted = fav
+        row.name:ClearAllPoints()
+        row.name:SetPoint("LEFT", row, "LEFT", row.contentX + (fav and 13 or 0), 0)
+        row.name:SetPoint("RIGHT", row.slot, "LEFT", -4, 0)
+    end
     row.name:SetText(item.n or ("item:" .. pick.id))
     row.name:SetTextColor(color(done and "textDim" or "text"))
     row.slot:SetText(pick.groupLabel or (item.eq and ns.SlotLabel(item.eq)) or "")

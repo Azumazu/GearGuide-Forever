@@ -790,6 +790,68 @@ function Skin:List(parent, opts)
 end
 
 ---------------------------------------------------------------------------
+-- Favorite star
+---------------------------------------------------------------------------
+-- The raid-target "star" icon: shipped by every client since vanilla (chat's {star} uses it),
+-- unlike FavoritesIcon/ReputationStar which only some clients have.
+Skin.STAR = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1"
+
+-- Inline markup for a star in a FontString ("|T...|t").
+function Skin:StarMarkup(size)
+    return "|T" .. Skin.STAR .. ":" .. (size or 0) .. "|t"
+end
+
+-- on = gold star; off = grey, faint (brighter while hovered).
+function Skin:StyleStar(tex, on, hover)
+    if tex.SetDesaturated then tex:SetDesaturated(not on) end
+    if on then
+        tex:SetVertexColor(1, 1, 1)
+        tex:SetAlpha(1)
+    else
+        tex:SetVertexColor(0.7, 0.7, 0.7)
+        tex:SetAlpha(hover and 0.85 or 0.25)
+    end
+end
+
+-- Small star toggle. b:SetFavorite(on); b.onToggle = function(b) end is called on click;
+-- b.tooltip = {title, line} (optional).
+function Skin:StarButton(parent, size)
+    size = size or 16
+    local b = CreateFrame("Button", nil, parent)
+    b:SetSize(size, size)
+    b:RegisterForClicks("LeftButtonUp")
+    local t = b:CreateTexture(nil, "OVERLAY")
+    t:SetAllPoints()
+    t:SetTexture(Skin.STAR)
+    b.tex, b.on, b.hovered, b.onToggle, b.tooltip = t, false, false, false, false
+
+    function b:SetFavorite(on)
+        self.on = on and true or false
+        Skin:StyleStar(t, self.on, self.hovered)
+    end
+    b:SetScript("OnEnter", function(self)
+        self.hovered = true
+        Skin:StyleStar(t, self.on, true)
+        if self.tooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+            GameTooltip:AddLine(self.tooltip[1] or "", 1, 1, 1)
+            if self.tooltip[2] then GameTooltip:AddLine(self.tooltip[2], 0.7, 0.7, 0.7, true) end
+            GameTooltip:Show()
+        end
+    end)
+    b:SetScript("OnLeave", function(self)
+        self.hovered = false
+        Skin:StyleStar(t, self.on, false)
+        if GameTooltip:IsOwned(self) then GameTooltip:Hide() end
+    end)
+    b:SetScript("OnClick", function(self)
+        if self.onToggle then self.onToggle(self) end
+    end)
+    b:SetFavorite(false)
+    return b
+end
+
+---------------------------------------------------------------------------
 -- Bar rows (EllesmereUI-style list lines; used by the main list and the mini tracker)
 ---------------------------------------------------------------------------
 -- Horizontal gradient (left -> right) with feature detection; flat right color as fallback.

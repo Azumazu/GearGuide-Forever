@@ -48,17 +48,22 @@ def read_shipped(path: Path) -> tuple[dict[int, dict], dict]:
     m = re.search(r"meta = ", text)
     if m:
         meta = LuaTableParser(text[m.end():]).value()
-    pool: dict[int, dict] = {}
-    items: dict[int, dict] = {}
+    tables: dict[str, dict[int, object]] = {"S": {}, "I": {}, "L": {}}
     for line in text.splitlines():
-        lm = re.match(r"^([SI])\[(\d+)\]=(.*)$", line)
+        lm = re.match(r"^([SIL])\[(\d+)\]=(.*)$", line)
         if not lm:
             continue
-        value = LuaTableParser(lm.group(3)).value()
-        (pool if lm.group(1) == "S" else items)[int(lm.group(2))] = value
-    for rec in items.values():
+        tables[lm.group(1)][int(lm.group(2))] = LuaTableParser(lm.group(3)).value()
+    pool, items, locs = tables["S"], tables["I"], tables["L"]
+    for rec in items.values():  # indices -> sources, location index -> location (format 3)
         if isinstance(rec.get("src"), list):
-            rec["src"] = [pool.get(s, s) if isinstance(s, int) else s for s in rec["src"]]
+            resolved = []
+            for s in rec["src"]:
+                s = pool.get(s, s) if isinstance(s, int) else s
+                if isinstance(s, dict) and isinstance(s.get("l"), int):
+                    s = {**{k: v for k, v in s.items() if k != "l"}, "loc": locs.get(s["l"])}
+                resolved.append(s)
+            rec["src"] = resolved
     return items, meta if isinstance(meta, dict) else {}
 
 

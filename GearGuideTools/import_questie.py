@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import re
 import struct
 import sys
 import zlib
@@ -31,8 +32,6 @@ NPC_NAME, NPC_ZONE = 1, 9
 OBJECT_NAME, OBJECT_ZONE = 1, 5
 QUEST_NAME, QUEST_ZONE_OR_SORT = 1, 17
 
-WORLD_DROP_THRESHOLD = 12   # more droppers than this -> one "World drop" source
-CHEST_THRESHOLD = 3         # more distinct chests than this -> one summary source
 MAX_SOURCES_PER_KIND = 8
 
 
@@ -130,6 +129,7 @@ def id_list(v) -> list[int]:
 # ----------------------------------------------------------------------------- baked store
 class QuestieStore:
     def __init__(self, toc: Path):
+        self.dir = toc.parent
         self.meta: dict[str, str] = {}
         with toc.open(encoding="utf-8", errors="replace") as f:
             for line in f:
@@ -199,33 +199,183 @@ def find_toc(path: Path) -> Path:
     raise SystemExit(f"QuestieDB_Forever.toc not found under {path}")
 
 
+# ----------------------------------------------------------------------------- zones and map locations
+NPC_SPAWNS, OBJECT_SPAWNS, QUEST_STARTED_BY = 7, 4, 2
+MAX_POINTS = 20          # spawn points kept per map
+MAX_LOC_MAPS = 3         # maps kept per location (most spawns first)
+MAX_DROP_NPCS = 25       # creatures listed per item before "... and N more"
+MAX_CHEST_KINDS = 6
+
+
+def _lua_blocks(path: Path) -> dict[str, dict]:
+    """ZoneDB.private.<name> = [[return { ... }]] blocks -> {name: table}."""
+    from build_db import LuaTableParser  # local import: build_db imports this module too
+    text = path.read_text(encoding="utf-8", errors="replace")
+    out = {}
+    for name, body in re.findall(r"ZoneDB\.private\.(\w+)\s*=\s*\[\[(.*?)\]\]", text, re.S):
+        body = body.strip()
+        if body.startswith("return"):
+            body = body[len("return"):]
+        value = LuaTableParser(body).value()
+        out[name] = value if isinstance(value, dict) else {i + 1: v for i, v in enumerate(value or [])}
+    return out
+
+
+class ZoneData:
+    """Area IDs -> world map IDs, sub-zone parents and dungeon entrances (QuestieDB Forever support files)."""
+
+    ENTRY = re.compile(r'^\s*\[(\d+)\]\s*=\s*\{"([^"]*)",\s*(nil|\{[^}]*\}),\s*(\d+),\s*\{(.*)\}\s*\},')
+    ENTRANCE = re.compile(r"\{\s*(\d+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\}")
+
+    def __init__(self, questiedb_dir: Path):
+        zones = questiedb_dir / "support" / "Forever" / "Zones"
+        self.area_to_map, self.parent, self.dungeons = {}, {}, {}
+        needed = [zones / n for n in ("areaIdToUiMapId.lua", "subZoneToParentZone.lua", "dungeons.lua")]
+        missing = [p.name for p in needed if not p.exists()]
+        if missing:
+            print(f"  QuestieDB zone files missing ({', '.join(missing)}): sources imported without map locations")
+            return
+        maps = _lua_blocks(zones / "areaIdToUiMapId.lua")
+        self.area_to_map = {**maps.get("areaIdToUiMapId", {}), **maps.get("areaIdToUiMapIdOverride", {})}
+        parents = _lua_blocks(zones / "subZoneToParentZone.lua")
+        self.parent = {**parents.get("subZoneToParentZone", {}), **parents.get("subZoneToParentZoneOverride", {})}
+        alias: dict[int, int] = {}
+        in_base = False
+        for line in (zones / "dungeons.lua").read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("local dungeons = {"):
+                in_base = True
+                continue
+            if in_base and line.startswith("}"):
+                break  # only the base table applies to Forever (later blocks are for newer expansions)
+            m = self.ENTRY.match(line) if in_base else None
+            if not m:
+                continue  # faction-dependent entries (battlegrounds) and comments are skipped
+            area, name, alts, parent, rest = int(m.group(1)), m.group(2), m.group(3), int(m.group(4)), m.group(5)
+            entrances = [(int(a), float(x), float(y)) for a, x, y in self.ENTRANCE.findall(rest)]
+            self.dungeons[area] = {"name": name, "parent": parent, "entrances": entrances}
+            if alts != "nil":
+                for alt in re.findall(r"\d+", alts):
+                    alias[int(alt)] = area
+        for alt, area in alias.items():
+            self.dungeons.setdefault(alt, self.dungeons[area])
+
+    def map_for(self, area) -> int | None:
+        for a in (area, self.parent.get(area)):
+            m = self.area_to_map.get(a) if a is not None else None
+            if m:
+                return int(m)
+        return None
+
+
+def _sample(points: list, limit: int) -> list:
+    if len(points) <= limit:
+        return points
+    step = len(points) / limit
+    return [points[int(i * step)] for i in range(limit)]
+
+
+def location(zones: ZoneData, spawns) -> list[dict] | None:
+    """Spawn table {area: [[x, y, phase?], ...]} -> [{m: uiMapID, p: [x1, y1, ...], e: dungeonArea?}, ...]."""
+    if isinstance(spawns, list):
+        spawns = {i + 1: v for i, v in enumerate(spawns)}
+    if not isinstance(spawns, dict):
+        return None
+    by_map: dict[tuple, list] = {}
+    for area, pts in spawns.items():
+        if not isinstance(area, int) or not isinstance(pts, list):
+            continue
+        coords = [p for p in pts if isinstance(p, list) and len(p) >= 2]
+        if any(p[0] == -1 and p[1] == -1 for p in coords):
+            dungeon = zones.dungeons.get(area)
+            for e_area, x, y in (dungeon or {}).get("entrances", []):
+                m = zones.map_for(e_area)
+                if m:
+                    by_map.setdefault((m, area), []).append((round(x, 1), round(y, 1)))
+            continue
+        m = zones.map_for(area)
+        if not m:
+            continue
+        for p in coords:
+            if 0 <= p[0] <= 100 and 0 <= p[1] <= 100:
+                by_map.setdefault((m, None), []).append((round(p[0], 1), round(p[1], 1)))
+    if not by_map:
+        return None
+    best = sorted(by_map.items(), key=lambda kv: -len(kv[1]))[:MAX_LOC_MAPS]
+    out = []
+    for (m, dungeon_area), pts in best:
+        flat = [c for xy in _sample(sorted(set(pts)), MAX_POINTS) for c in xy]
+        entry = {"m": m, "p": flat}
+        if dungeon_area:
+            entry["e"] = dungeon_area  # these points are the dungeon's entrance(s)
+        out.append(entry)
+    return out
+
+
+def merge_locations(locs: list) -> list | None:
+    """Combines several locations (e.g. every 'Solid Chest' object) into one, same limits."""
+    by_map: dict[tuple, list] = {}
+    for loc in locs:
+        for entry in loc or []:
+            pts = list(zip(entry["p"][0::2], entry["p"][1::2]))
+            by_map.setdefault((entry["m"], entry.get("e")), []).extend(pts)
+    if not by_map:
+        return None
+    out = []
+    for (m, e), pts in sorted(by_map.items(), key=lambda kv: -len(kv[1]))[:MAX_LOC_MAPS]:
+        entry = {"m": m, "p": [c for xy in _sample(sorted(set(pts)), MAX_POINTS) for c in xy]}
+        if e:
+            entry["e"] = e
+        out.append(entry)
+    return out
+
+
 # ----------------------------------------------------------------------------- sources
-def item_sources(store: QuestieStore, iid: int) -> list[dict]:
+def _npc_source(store, zones, kind, nid):
+    name = store.name("Npc", nid)
+    if not name:
+        return None
+    return {"t": kind, "n": name, "z": store.field("Npc", nid, NPC_ZONE) or None,
+            "loc": location(zones, store.field("Npc", nid, NPC_SPAWNS))}
+
+
+def _quest_giver_location(store, zones, qid):
+    started = store.field("Quest", qid, QUEST_STARTED_BY)
+    if isinstance(started, list):
+        started = {i + 1: v for i, v in enumerate(started)}
+    if not isinstance(started, dict):
+        return None
+    for nid in id_list(started.get(1)):
+        loc = location(zones, store.field("Npc", nid, NPC_SPAWNS))
+        if loc:
+            return loc
+    for oid in id_list(started.get(2)):
+        loc = location(zones, store.field("Object", oid, OBJECT_SPAWNS))
+        if loc:
+            return loc
+    return None
+
+
+def item_sources(store: QuestieStore, iid: int, zones: ZoneData | None = None) -> list[dict]:
     if not store.row("Item", iid):
         return []
+    zones = zones or ZoneData(store.dir)
     out: list[dict] = []
 
     npcs = id_list(store.field("Item", iid, ITEM_NPC_DROPS))
-    if len(npcs) > WORLD_DROP_THRESHOLD:
-        out.append({"t": "drop", "n": f"World drop ({len(npcs)} creatures)"})
-    else:
-        for nid in npcs[:MAX_SOURCES_PER_KIND]:
-            name = store.name("Npc", nid)
-            if name:
-                out.append({"t": "drop", "n": name, "z": store.field("Npc", nid, NPC_ZONE) or None})
+    for nid in npcs[:MAX_DROP_NPCS]:
+        src = _npc_source(store, zones, "drop", nid)
+        if src:
+            out.append(src)
+    if len(npcs) > MAX_DROP_NPCS:
+        out.append({"t": "drop", "n": f"... and {len(npcs) - MAX_DROP_NPCS} more creatures"})
 
-    objects = []
+    chests: dict[str, list] = {}
     for oid in id_list(store.field("Item", iid, ITEM_OBJECT_DROPS)):
         name = store.name("Object", oid)
         if name:
-            objects.append({"t": "drop", "n": name, "z": store.field("Object", oid, OBJECT_ZONE) or None})
-    objects = list({(o["n"], o["z"]): o for o in objects}.values())  # same chest type in same zone once
-    if len(objects) > CHEST_THRESHOLD:
-        kinds = sorted({o["n"] for o in objects})
-        label = kinds[0] if len(kinds) == 1 else "Treasure chests"
-        out.append({"t": "drop", "n": f"{label} ({len(objects)} locations)"})
-    else:
-        out.extend(objects)
+            chests.setdefault(name, []).append(location(zones, store.field("Object", oid, OBJECT_SPAWNS)))
+    for name, locs in sorted(chests.items(), key=lambda kv: -len(kv[1]))[:MAX_CHEST_KINDS]:
+        out.append({"t": "drop", "n": name, "loc": merge_locations(locs), "k": "object"})
 
     for cid in id_list(store.field("Item", iid, ITEM_ITEM_DROPS))[:MAX_SOURCES_PER_KIND]:
         name = store.name("Item", cid)
@@ -233,15 +383,16 @@ def item_sources(store: QuestieStore, iid: int) -> list[dict]:
             out.append({"t": "drop", "n": f"Inside {name}"})
 
     for vid in id_list(store.field("Item", iid, ITEM_VENDORS))[:MAX_SOURCES_PER_KIND]:
-        name = store.name("Npc", vid)
-        if name:
-            out.append({"t": "vendor", "n": name, "z": store.field("Npc", vid, NPC_ZONE) or None})
+        src = _npc_source(store, zones, "vendor", vid)
+        if src:
+            out.append(src)
 
     for qid in id_list(store.field("Item", iid, ITEM_QUEST_REWARDS))[:MAX_SOURCES_PER_KIND]:
         name = store.name("Quest", qid)
         if name:
             zone = store.field("Quest", qid, QUEST_ZONE_OR_SORT)
-            out.append({"t": "quest", "n": name, "z": zone if isinstance(zone, int) and zone > 0 else None})
+            out.append({"t": "quest", "n": name, "z": zone if isinstance(zone, int) and zone > 0 else None,
+                        "loc": _quest_giver_location(store, zones, qid)})
 
     unique = {}
     for src in out:
@@ -253,9 +404,10 @@ def item_sources(store: QuestieStore, iid: int) -> list[dict]:
 def merge_sources(items: dict[int, dict], questie_path: Path) -> tuple[int, int]:
     """Adds Questie sources to GearGuide items in place. Returns (items with new sources, sources added)."""
     store = QuestieStore(find_toc(questie_path))
+    zones = ZoneData(store.dir)
     touched = added = 0
     for iid, rec in items.items():
-        new = item_sources(store, iid)
+        new = item_sources(store, iid, zones)
         if not new:
             continue
         have = rec.setdefault("src", [])

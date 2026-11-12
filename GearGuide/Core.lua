@@ -5,7 +5,7 @@ ns.QUESTION_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 ns.GetItemInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
 
 local DATA_TTL_SECONDS = 30 * 24 * 3600
-local SUPPORTED_DB_FORMAT = 2
+local SUPPORTED_DB_FORMAT = 3
 
 local defaults = {
     minimap = { angle = 225, hide = false },
@@ -149,10 +149,15 @@ function ns:GetSources(id)
     local dbItem = GearGuide_Data.items[id]
     if dbItem and dbItem.src then
         -- Format 2 stores each source once in GearGuide_Data.sources; items hold indices.
-        local pool, resolved = GearGuide_Data.sources, {}
+        local pool, locs, resolved = GearGuide_Data.sources, GearGuide_Data.locs, {}
         for _, s in ipairs(dbItem.src) do
             if type(s) == "number" then s = pool and pool[s] end
-            if type(s) == "table" then resolved[#resolved + 1] = s end
+            if type(s) == "table" then
+                if s.l and locs and locs[s.l] and not s.loc then
+                    s = { t = s.t, n = s.n, z = s.z, k = s.k, loc = locs[s.l] }  -- format 3: map location
+                end
+                resolved[#resolved + 1] = s
+            end
         end
         add(resolved)
     end
@@ -182,12 +187,71 @@ function ns.FormatSource(s)
     return text
 end
 
+-- Does this source have a place on the world map?
+function ns.HasLocation(s)
+    return type(s) == "table" and type(s.loc) == "table" and s.loc[1] ~= nil
+end
+
+-- Opens the world map at a source: creature/vendor/quest giver spawns, chest spots, or the dungeon
+-- entrance for things inside instances. Clicking the same source again shows its next location.
+local lastShown, lastIndex
+function ns:ShowSourceOnMap(s)
+    if not ns.HasLocation(s) then
+        ns.Print("No map location is known for " .. (s and s.n or "this source") .. " yet.")
+        return
+    end
+    local key = (s.t or "") .. "|" .. (s.n or "") .. "|" .. tostring(s.z)  -- sources are rebuilt per call
+    lastIndex = (lastShown == key) and (lastIndex % #s.loc) + 1 or 1
+    lastShown = key
+    local entry = s.loc[lastIndex]
+    local points = {}
+    for i = 1, #(entry.p or {}) - 1, 2 do
+        points[#points + 1] = { x = entry.p[i] / 100, y = entry.p[i + 1] / 100 }
+    end
+    local kind = entry.e and "entrance" or (s.k == "object" and "object") or s.t
+    local sub = ns.FormatSource(s)
+    if entry.e then sub = sub .. " - dungeon entrance" end
+    if #s.loc > 1 then sub = sub .. string.format("  (location %d of %d, click again for the next)", lastIndex, #s.loc) end
+    self:ShowOnMap({ map = entry.m, points = points, title = s.n, sub = sub, kind = kind })
+end
+
 function ns:SourceSummary(id)
     local list = self:GetSources(id)
     if #list == 0 then return "|cff888888Source unknown|r" end
     local text = ns.FormatSource(list[1])
     if #list > 1 then text = text .. string.format(" |cff888888+%d more|r", #list - 1) end
     return text
+end
+
+---------------------------------------------------------------------------
+-- Favorites (per character): items the player has chosen to go for
+---------------------------------------------------------------------------
+function ns:IsFavorite(id)
+    return GearGuideCharDB ~= nil and GearGuideCharDB.favorites ~= nil and GearGuideCharDB.favorites[id] ~= nil
+end
+
+function ns:SetFavorite(id, on)
+    if not id then return end
+    GearGuideCharDB.favorites[id] = on and (GearGuideCharDB.favorites[id] or time()) or nil
+    self:RequestRefresh()
+end
+
+function ns:ToggleFavorite(id)
+    self:SetFavorite(id, not self:IsFavorite(id))
+    return self:IsFavorite(id)
+end
+
+-- Favorite item IDs, oldest first (the order the player picked them).
+function ns:GetFavorites()
+    local list = {}
+    for id, at in pairs(GearGuideCharDB.favorites or {}) do list[#list + 1] = { id = id, at = at } end
+    table.sort(list, function(a, b)
+        if a.at ~= b.at then return a.at < b.at end
+        return a.id < b.id  -- starred within the same second: stable order
+    end)
+    local ids = {}
+    for i, f in ipairs(list) do ids[i] = f.id end
+    return ids
 end
 
 ---------------------------------------------------------------------------
@@ -433,10 +497,12 @@ events:SetScript("OnEvent", function(_, event, arg1)
         GearGuideCharDB = GearGuideCharDB or {}
         GearGuideCharDB.acquired = GearGuideCharDB.acquired or {}
         GearGuideCharDB.spec = GearGuideCharDB.spec or "AUTO"
+        GearGuideCharDB.favorites = GearGuideCharDB.favorites or {}
         if type(GearGuide_Data) ~= "table" then GearGuide_Data = {} end
         GearGuide_Data.items = GearGuide_Data.items or {}
         GearGuide_Data.meta = GearGuide_Data.meta or {}
         GearGuide_Data.sources = GearGuide_Data.sources or {}
+        GearGuide_Data.locs = GearGuide_Data.locs or {}
         -- A database written in a newer format than this addon understands is ignored, not misread.
         if (GearGuide_Data.meta.format or 1) > SUPPORTED_DB_FORMAT then
             ns.dbTooNew = true

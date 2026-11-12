@@ -31,8 +31,32 @@ function ns:GetTopPicks(n, hideCompleted)
         if a.delta ~= b.delta then return a.delta > b.delta end
         return a.score > b.score
     end)
-    local out = {}
-    for i = 1, math.min(n, #all) do out[i] = all[i] end
+    -- Favorites first (still wanted ones, then acquired ones), then the best upgrades.
+    local out, used = {}, {}
+    local weights, ctx = self:GetScoringContext()
+    local wanted, owned = {}, {}
+    for _, id in ipairs(self:GetFavorites()) do
+        local item = self:GetItem(id)
+        if item then
+            local pick = { id = id, item = item, score = self:Score(item, weights, ctx), delta = 0, favorite = true,
+                groupLabel = ns.SlotLabel(item.eq) }
+            if self:GetCompletion(id, class) == "done" then
+                if not hideCompleted then owned[#owned + 1] = pick end
+            else
+                wanted[#wanted + 1] = pick
+            end
+        end
+    end
+    for _, list in ipairs({ wanted, all, owned }) do
+        for _, p in ipairs(list) do
+            if #out >= n then break end
+            if not used[p.id] then
+                used[p.id] = true
+                p.favorite = p.favorite or self:IsFavorite(p.id)
+                out[#out + 1] = p
+            end
+        end
+    end
     return out
 end
 
