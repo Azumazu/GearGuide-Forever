@@ -1,0 +1,198 @@
+{
+  "class": "SHAMAN",
+  "specs": {
+    "ELEMENTAL": {
+      "priority": [
+        "HIT",
+        "SHIT",
+        "SP",
+        "CRIT",
+        "SCRIT",
+        "HASTE",
+        "INT",
+        "MP5",
+        "HEAL",
+        "SPI",
+        "STA"
+      ],
+      "weights": {
+        "HIT": 11.0,
+        "SHIT": 11.0,
+        "SP": 1.0,
+        "CRIT": 8.0,
+        "SCRIT": 8.0,
+        "HASTE": 6.0,
+        "INT": 0.4,
+        "MP5": 0.35,
+        "HEAL": 0.25,
+        "SPI": 0.15,
+        "STA": 0.1
+      },
+      "caps": [
+        "HIT 17% total vs raid bosses including talents (wow.gg, Warcraft Tavern overview). Above the cap, HIT/SHIT are worth 0",
+        "About 4% against equal-level mobs while leveling",
+        "Haste does not shorten DoTs such as Flame Shock and makes you spend mana faster; no haste cap is documented"
+      ],
+      "leveling": {
+        "HIT": 4.0,
+        "SHIT": 4.0,
+        "STA": 0.3,
+        "INT": 0.5,
+        "MP5": 0.5,
+        "SPI": 0.3
+      },
+      "confidence": "medium",
+      "notes": "Sources disagree on Hit vs SP for first place: wow.gg puts SP first, Mobalytics and the Warcraft Tavern class overview put Hit first. I put HIT first until capped. Crit comes third because Elemental Fury raises crit damage and crits return mana. Haste is a new Forever gear stat: the Warcraft Tavern overview ranks it 2nd, the WT Elemental page ranks it last, and wow.gg leaves it out, so it sits below crit. Spell Pierce is also new (no stat key for it). Hit and crit are unified in Forever, so HIT=SHIT and CRIT=SCRIT; percent stats are per 1%. Water Shield gives no passive mp5 in Forever. Mindfulness (Resto tree) keeps 50% of regen while casting, which makes Spirit somewhat useful. Shamans have no Bloodlust; Rage of the Farseer is a personal cooldown instead. HEAL gets 0.25 because, reportedly, bonus healing also grants 1/3 as much damage in Forever; set it to 0 if the parser already counts that damage as SP. Leveling: Warcraft Tavern favours SP over Hit against level-equal mobs, and mana is tight early.",
+      "sources": [
+        {
+          "url": "https://wow.gg/guides/wow-forever-elemental-shaman",
+          "date_or_status": "2026-11-04",
+          "used_for": "priority, 17% hit cap"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/elemental-shaman/",
+          "date_or_status": "written for level 30 beta cap; 60 update pending",
+          "used_for": "priority, haste notes, Mindfulness, Water Shield"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/shaman/",
+          "date_or_status": "beta, no explicit date",
+          "used_for": "priority incl. haste, 17% hit cap"
+        },
+        {
+          "url": "https://mobalytics.gg/wow-forever/profile/tiqqle-wwhr2p/classes/elemental-shaman-guide-talents-rotation-stats-and-more",
+          "date_or_status": "community guide, search snippet only (fetch refused)",
+          "used_for": "priority cross-check"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/stats/",
+          "date_or_status": "Forever, unknown date",
+          "used_for": "unified hit/crit, spell miss vs bosses"
+        }
+      ]
+    },
+    "ENHANCEMENT": {
+      "priority": [
+        "DPS",
+        "HIT",
+        "SHIT",
+        "EXPERTISE",
+        "CRIT",
+        "SCRIT",
+        "STR",
+        "INT",
+        "AP",
+        "SP",
+        "AGI",
+        "STA",
+        "MP5"
+      ],
+      "weights": {
+        "DPS": 8.0,
+        "HIT": 12.0,
+        "SHIT": 12.0,
+        "CRIT": 10.0,
+        "SCRIT": 10.0,
+        "STR": 1.0,
+        "INT": 0.7,
+        "AP": 0.5,
+        "SP": 0.45,
+        "AGI": 0.4,
+        "STA": 0.15,
+        "MP5": 0.1,
+        "EXPERTISE": 11.0
+      },
+      "caps": [
+        "HIT 8% vs raid bosses for weapon special attacks (wow.gg; Warcraft Tavern says at least 8%; general base melee miss is 9%). The 17% spell cap is not reached, so hit keeps some value past 8% (roughly a third of its weight) for Maelstrom Lightning Bolts and shocks",
+        "EXPERTISE: about 6.5% vs raid bosses (Warcraft Tavern; removes boss dodge from behind). Worth 0 above the cap; no level-60 confirmation yet",
+        "5% hit against equal-level mobs while leveling"
+      ],
+      "leveling": {
+        "DPS": 9.0,
+        "STA": 0.4,
+        "HIT": 8.0,
+        "SHIT": 8.0,
+        "INT": 0.5,
+        "EXPERTISE": 6.0
+      },
+      "confidence": "medium",
+      "notes": "Every source puts weapon damage first. Use a slow two-hander: Shamans cannot dual wield in Forever (wow.gg), and Flurry, Windfury and Stormstrike scale with weapon speed and damage. Then Hit > Expertise > Crit > Strength (wow.gg and WT both put Expertise next to or tied with Hit; it replaces the old weapon-skill bonuses). 1 STR = 2 AP; 14 AP = 1 DPS. In Forever, Mental Dexterity converts INT to AP (Warcraft Tavern: 1 INT = 1 AP, i.e. half a STR); one unverified comment says it was raised to 150%. Mental Quickness lets INT/SP scale spell damage. So INT sits just below STR, and the WT overview even ties them. Shaman AGI gives crit (1% per 20 AGI) but no AP, so AGI comes last (as in WT). Hit and crit are unified, so HIT=SHIT and CRIT=SCRIT; percent stats are per 1%. Haste exists, but no Enhancement guide ranks it. Windfury Totem is a permanent aura (no totem twisting). WT's priority still reflects the level 30 beta.",
+      "sources": [
+        {
+          "url": "https://wow.gg/guides/wow-forever-enhancement-shaman",
+          "date_or_status": "2026-11-04",
+          "used_for": "priority, 8% hit, 2H only"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/shaman/",
+          "date_or_status": "beta (level 30 cap), no explicit date",
+          "used_for": "priority, Mental Dexterity, expertise 6.5%"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/enhancement-shaman/",
+          "date_or_status": "beta level 30 build; 60 pending",
+          "used_for": "INT->AP ratio, 2H recommendation"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/stats/",
+          "date_or_status": "Forever, unknown date",
+          "used_for": "STR->AP, AGI->crit, 14 AP = 1 DPS"
+        }
+      ]
+    },
+    "RESTORATION": {
+      "priority": [
+        "HEAL",
+        "SP",
+        "INT",
+        "CRIT",
+        "SCRIT",
+        "HASTE",
+        "SPI",
+        "MP5",
+        "STA"
+      ],
+      "weights": {
+        "HEAL": 1.0,
+        "SP": 1.0,
+        "INT": 0.5,
+        "CRIT": 6.0,
+        "SCRIT": 6.0,
+        "HASTE": 5.0,
+        "SPI": 0.45,
+        "MP5": 0.4,
+        "STA": 0.1
+      },
+      "caps": [
+        "No caps for healing. Hit does nothing for heals",
+        "Haste speeds casts and the GCD but not HoTs (Riptide) and burns mana faster; no haste cap is documented"
+      ],
+      "leveling": {
+        "SP": 1.0,
+        "HEAL": 0.6,
+        "STA": 0.3,
+        "INT": 0.5,
+        "SPI": 0.4
+      },
+      "confidence": "low",
+      "notes": "The three sources agree only that Healing Power comes first. wow.gg: Crit > Int > Spirit > MP5. WT Resto page: Spirit > Int > Crit > Haste. WT class overview: Int > Haste > MP5 > Spirit > Crit. This order is a consensus by average rank. Forever-specific: Water Shield returns mana on heal crits but gives no passive mp5, Tidal Mastery adds 5% heal crit, HoTs can crit, and Riptide boosts Chain Heal, all of which lift crit. Warcraft Tavern calls Spirit the main regen stat in Forever, with Mindfulness keeping 50% of regen while casting, so SPI is slightly above MP5, though per point the two are close. Hit and crit are unified, so CRIT=SCRIT; percent stats are per 1%. SP (damage+healing) heals as well as HEAL. The WT Resto page still reflects the level 30 beta.",
+      "sources": [
+        {
+          "url": "https://wow.gg/guides/wow-forever-restoration-shaman",
+          "date_or_status": "2026-11-04",
+          "used_for": "priority"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/restoration-shaman/",
+          "date_or_status": "written for level 30 beta; 60 pending",
+          "used_for": "priority, Water Shield / Tidal Mastery / haste notes"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/shaman/",
+          "date_or_status": "beta, no explicit date",
+          "used_for": "priority incl. haste and MP5"
+        }
+      ]
+    }
+  }
+}

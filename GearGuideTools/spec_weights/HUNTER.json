@@ -1,0 +1,254 @@
+{
+  "class": "HUNTER",
+  "specs": {
+    "BEASTMASTERY": {
+      "priority": [
+        "RDPS",
+        "HIT",
+        "SHIT",
+        "CRIT",
+        "SCRIT",
+        "HASTE",
+        "AGI",
+        "DPS",
+        "AP",
+        "RAP",
+        "MP5",
+        "INT",
+        "SPI",
+        "STA",
+        "STR",
+        "ARMOR"
+      ],
+      "weights": {
+        "RDPS": 10.5,
+        "HIT": 10.0,
+        "SHIT": 10.0,
+        "CRIT": 9.5,
+        "SCRIT": 9.5,
+        "HASTE": 7.0,
+        "AGI": 1.0,
+        "DPS": 0.5,
+        "AP": 0.42,
+        "RAP": 0.4,
+        "MP5": 0.35,
+        "INT": 0.3,
+        "SPI": 0.15,
+        "STA": 0.12,
+        "STR": 0.03,
+        "ARMOR": 0.01
+      },
+      "caps": [
+        "HIT 8% vs raid bosses (Forever removed hit suppression, so the cap dropped from 9% to 8%); about 5% vs level-equal mobs. Past the cap hit is worth ~0, so drop HIT to about AGI value per point.",
+        "Weapon skill: ~5 skill is about 3% hit vs bosses (Warcraft Tavern); no key for it in GearGuide."
+      ],
+      "leveling": {
+        "HIT": 6.0,
+        "STA": 0.35,
+        "INT": 0.4,
+        "SPI": 0.3,
+        "SHIT": 6.0,
+        "RDPS": 13.0,
+        "DPS": 0.8
+      },
+      "confidence": "medium",
+      "notes": "AGI = 2 RAP + 1 melee AP, 53 AGI = 1% crit at 60 (same as classic). AP is counted at RAP value plus a little extra because it covers melee too. Forever: pets inherit 100% of the hunter's crit and 10% of the higher AP, and Intimidation gives the pet 100% crit, so CRIT is weighted close to HIT. Bestial Discipline adds mana regen. Sources disagree on INT/SPI/STA order (Mobalytics: INT > STA > STR > SPI; wow.gg beta: SPI > INT > STA). Weapon DPS is first in every source, so it gets the top weight even though it is only ~25 RAP per point in theory. Ranks follow per-point weights, so percent stats come before AGI. Forever unifies hit and crit across melee, ranged and spells (rated at 10 rating per 1% hit and 14 per 1% crit at 60, from beta files), so SHIT=HIT and SCRIT=CRIT. HASTE (per 1%) affects melee, ranged and casting speed. It is rare on gear, has no breakpoints and does not speed up DoTs; it is weighted below CRIT, and the rating needed per 1% is unannounced. RDPS (ranged weapon DPS) is the main weapon stat. DPS (melee weapon) gets only 0.5 because the melee weapon is mostly a stat stick (occasional Raptor Strike / Wing Clip).",
+      "sources": [
+        {
+          "url": "https://www.icy-veins.com/wow-forever/beast-mastery-hunter-ranged-dps-pve-stat-priority",
+          "date_or_status": "beta-based (read through search snippets only; the site returns 403 to fetch)",
+          "used_for": "priority (ranged weapon dmg > hit > agi > crit), 8% hit cap"
+        },
+        {
+          "url": "https://mobalytics.gg/wow-forever/classes/beast-mastery-hunter-guide",
+          "date_or_status": "updated 2026-11-01 (read through search snippets only)",
+          "used_for": "hit to 8%, then AGI > INT > STA > STR > SPI"
+        },
+        {
+          "url": "https://wow.gg/guides/hunter-beast-mastery-forever-overview",
+          "date_or_status": "2026-09-19, beta",
+          "used_for": "AGI > HIT > INT; hit also covers traps"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/hunter/",
+          "date_or_status": "undated, pre-launch",
+          "used_for": "conversions (53 AGI/1% crit, 14 AP/1 DPS), pet 10% AP / 100% crit, 9% cap (pre-launch figure, superseded)"
+        },
+        {
+          "url": "https://rankedboost.com/world-of-warcraft/forever/stats/haste/",
+          "date_or_status": "beta-file data (read through search snippets only)",
+          "used_for": "haste behaviour, unified hit/crit ratings"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/stats/",
+          "date_or_status": "unknown (read through search snippets only)",
+          "used_for": "unified hit/crit cross-check"
+        }
+      ]
+    },
+    "MARKSMANSHIP": {
+      "priority": [
+        "RDPS",
+        "HIT",
+        "SHIT",
+        "CRIT",
+        "SCRIT",
+        "HASTE",
+        "AGI",
+        "DPS",
+        "INT",
+        "AP",
+        "RAP",
+        "MP5",
+        "SPI",
+        "STA",
+        "STR",
+        "ARMOR"
+      ],
+      "weights": {
+        "RDPS": 11.0,
+        "HIT": 10.5,
+        "SHIT": 10.5,
+        "CRIT": 10.0,
+        "SCRIT": 10.0,
+        "HASTE": 7.0,
+        "AGI": 1.0,
+        "DPS": 0.5,
+        "INT": 0.5,
+        "AP": 0.41,
+        "RAP": 0.4,
+        "MP5": 0.3,
+        "SPI": 0.18,
+        "STA": 0.12,
+        "STR": 0.02,
+        "ARMOR": 0.01
+      },
+      "caps": [
+        "HIT 8% vs raid bosses (no hit suppression in Forever); about 5% vs level-equal mobs. Past the cap, value HIT at about 0."
+      ],
+      "leveling": {
+        "HIT": 6.0,
+        "STA": 0.35,
+        "SPI": 0.3,
+        "SHIT": 6.0,
+        "RDPS": 13.5,
+        "DPS": 0.8
+      },
+      "confidence": "medium",
+      "notes": "Forever MM talent Careful Aim converts 100% of INT into AP at 5/5 (wow.gg), so INT is worth about 1 AP plus mana and ranks above raw AP. This is why INT ranks above SPI here; Icy Veins lists SPI above INT, probably from before the talent. If the build skips Careful Aim, use INT about 0.12. Trueshot Aura is now ranged-AP only. Lone Wolf (no-pet) is new. Mortal Shots makes crit slightly more valuable. wow.gg (2026-11-04) order: ranged weapon dmg > hit > crit > agi > AP. Icy Veins order: weapon > hit > agi > crit > spi > int > sta. Gear notes: get the best weapon and the most AGI. Forever unifies hit and crit across melee, ranged and spells (rated at 10 rating per 1% hit and 14 per 1% crit at 60, from beta files), so SHIT=HIT and SCRIT=CRIT. HASTE (per 1%) affects melee, ranged and casting speed. It is rare on gear, has no breakpoints and does not speed up DoTs; it is weighted below CRIT, and the rating needed per 1% is unannounced. RDPS (ranged weapon DPS) is the main weapon stat. DPS (melee weapon) gets only 0.5 because the melee weapon is mostly a stat stick (occasional Raptor Strike / Wing Clip).",
+      "sources": [
+        {
+          "url": "https://wow.gg/guides/wow-forever-marksmanship-hunter",
+          "date_or_status": "2026-11-04, level 60, preliminary pre-raid",
+          "used_for": "priority, Careful Aim INT->AP"
+        },
+        {
+          "url": "https://www.icy-veins.com/wow-forever/marksmanship-hunter-ranged-dps-pve-stat-priority",
+          "date_or_status": "beta-based (read through search snippets only)",
+          "used_for": "priority incl. SPI/INT/STA tail"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/hunter/",
+          "date_or_status": "undated, pre-launch",
+          "used_for": "conversions, MM talent changes (Trueshot Aura, Lone Wolf)"
+        },
+        {
+          "url": "https://rankedboost.com/world-of-warcraft/forever/stats/haste/",
+          "date_or_status": "beta-file data (read through search snippets only)",
+          "used_for": "haste behaviour, unified hit/crit ratings"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/stats/",
+          "date_or_status": "unknown (read through search snippets only)",
+          "used_for": "unified hit/crit cross-check"
+        }
+      ]
+    },
+    "SURVIVAL": {
+      "priority": [
+        "DPS",
+        "HIT",
+        "SHIT",
+        "CRIT",
+        "SCRIT",
+        "HASTE",
+        "RDPS",
+        "AGI",
+        "AP",
+        "STR",
+        "INT",
+        "MP5",
+        "SPI",
+        "STA",
+        "DODGE",
+        "RAP",
+        "ARMOR"
+      ],
+      "weights": {
+        "DPS": 19.0,
+        "HIT": 18.0,
+        "SHIT": 18.0,
+        "CRIT": 17.0,
+        "SCRIT": 17.0,
+        "HASTE": 12.0,
+        "RDPS": 1.5,
+        "AGI": 1.0,
+        "AP": 0.6,
+        "STR": 0.55,
+        "INT": 0.45,
+        "MP5": 0.25,
+        "SPI": 0.18,
+        "STA": 0.15,
+        "DODGE": 0.1,
+        "RAP": 0.05,
+        "ARMOR": 0.01
+      },
+      "caps": [
+        "HIT 8% for melee special attacks vs raid bosses; Surefooted gives 3%, so gear needs about 5%. After the cap, HIT is worth about 0.",
+        "Dual wield: white-hit off-hand misses need a much higher cap. Don't stack hit for it."
+      ],
+      "leveling": {
+        "DPS": 22.0,
+        "HIT": 9.0,
+        "STA": 0.4,
+        "SPI": 0.3,
+        "SHIT": 9.0,
+        "RDPS": 2.0
+      },
+      "confidence": "low",
+      "notes": "In Forever, Survival is a melee spec (2H weapon or two one-handers). Melee AP comes from AGI (1:1) and STR (1:1), and 53 AGI = 1% crit, so most of AGI's value is crit. Predator's Edge makes melee crits and off-hand attacks stronger, so CRIT is high. Careful Aim at 3/5 converts 60% of INT into AP. DPS = melee weapon DPS (main weapon). RDPS = 1.5 because the ranged weapon is a secondary stat slot. Icy Veins lists weapon dmg and AGI as the main stats, with an 8% soft cap. wow.gg (2026-11-04): melee weapon dmg > hit > crit > agi > AP. wow.gg beta (older) ranked SPI and INT above STA, HIT and CRIT. Forever unifies hit and crit across melee, ranged and spells (rated at 10 rating per 1% hit and 14 per 1% crit at 60, from beta files), so SHIT=HIT and SCRIT=CRIT. HASTE (per 1%) affects melee, ranged and casting speed. It is rare on gear, has no breakpoints and does not speed up DoTs; it is weighted below CRIT, and the rating needed per 1% is unannounced. EXPERTISE is not ranked by any hunter guide, so it is left out; if a melee-Survival source ranks it later, roughly HIT value up to about 6.5% from behind is a reasonable start.",
+      "sources": [
+        {
+          "url": "https://wow.gg/guides/wow-forever-survival-hunter",
+          "date_or_status": "2026-11-04, level 60, preliminary pre-raid",
+          "used_for": "priority, Surefooted 3%, Careful Aim 3/5, Predator's Edge"
+        },
+        {
+          "url": "https://www.icy-veins.com/wow-forever/survival-hunter-melee-dps-pve-stat-priority",
+          "date_or_status": "updated 2026-10-26, beta-based (read through search snippets only)",
+          "used_for": "weapon dmg + AGI first, 8% hit cap due to removed hit suppression"
+        },
+        {
+          "url": "https://wow.gg/guides/wow-forever-survival-hunter-beta",
+          "date_or_status": "beta (read through search snippets only)",
+          "used_for": "older order cross-check"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/hunter/",
+          "date_or_status": "undated, pre-launch",
+          "used_for": "SV melee talent changes"
+        },
+        {
+          "url": "https://rankedboost.com/world-of-warcraft/forever/stats/haste/",
+          "date_or_status": "beta-file data (read through search snippets only)",
+          "used_for": "haste behaviour, unified hit/crit ratings"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/stats/",
+          "date_or_status": "unknown (read through search snippets only)",
+          "used_for": "unified hit/crit cross-check"
+        }
+      ]
+    }
+  }
+}

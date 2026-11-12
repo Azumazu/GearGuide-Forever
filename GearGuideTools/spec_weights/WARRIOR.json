@@ -1,0 +1,230 @@
+{
+  "class": "WARRIOR",
+  "specs": {
+    "ARMS": {
+      "priority": [
+        "DPS",
+        "HIT",
+        "SHIT",
+        "EXPERTISE",
+        "CRIT",
+        "SCRIT",
+        "HASTE",
+        "STR",
+        "AGI",
+        "AP",
+        "STA",
+        "ARMOR"
+      ],
+      "weights": {
+        "DPS": 8.0,
+        "HIT": 15.0,
+        "SHIT": 15.0,
+        "CRIT": 14.0,
+        "SCRIT": 14.0,
+        "STR": 1.0,
+        "AGI": 0.7,
+        "AP": 0.5,
+        "STA": 0.15,
+        "ARMOR": 0.01,
+        "EXPERTISE": 14.5,
+        "HASTE": 10.0
+      },
+      "caps": [
+        "HIT 8% vs level-63 bosses (Forever value, not classic 9%); with a 2H this removes white and special misses, so HIT is worth ~0 past 8%",
+        "EXPERTISE 6.5% (dodge reduction) removes boss dodges when attacking from behind; ~0 past that for Arms",
+        "HIT 5% vs level-equal mobs"
+      ],
+      "leveling": {
+        "DPS": 10.0,
+        "HIT": 8.0,
+        "SHIT": 8.0,
+        "STA": 0.4,
+        "EXPERTISE": 7.0
+      },
+      "confidence": "medium",
+      "notes": "Guide order at 60: weapon damage > hit > expertise > crit > strength (> agility > stamina in the beta list). 1 STR = 2 AP; AGI gives 1% crit per 20 at 60 plus 2 armor. Priority list is guide importance; weights are per point / per 1%, so percent stats are numerically larger than DPS even though the weapon is the #1 upgrade (2H math alone gives ~7 STR per weapon DPS; bumped to 8 for Forever's weapon emphasis). Forever: hit and crit are unified across melee/ranged/spell, so SHIT/SCRIT mirror HIT/CRIT; weapon-skill items heavily nerfed and replaced by Expertise; white-hit rage is normalized (weapon damage does not raise rage per swing, crits double it). Weaponmaster pools weapon-type bonuses. HASTE is not ranked by any guide (scarce on gear; Skyborne racial); weight 10 per 1% is an estimate (more swings = more damage and rage).",
+      "sources": [
+        {
+          "url": "https://wow.gg/guides/wow-forever-arms-warrior",
+          "date_or_status": "level 60, updated 2026-11-04 (preliminary pre-raid BiS)",
+          "used_for": "priority, hit/expertise caps, rage normalization"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/arms-warrior/",
+          "date_or_status": "beta (level 30 builds), no stat order yet",
+          "used_for": "stat roles, STR->AP"
+        },
+        {
+          "url": "https://wow.gg/guides/wow-forever-arms-warrior-beta",
+          "date_or_status": "beta, up to level 20",
+          "used_for": "lower priority (AGI > STA)"
+        },
+        {
+          "url": "https://www.icy-veins.com/wow-forever/arms-warrior-melee-dps-pve-stat-priority",
+          "date_or_status": "level 60 (search snippet only; page 403)",
+          "used_for": "cross-check: weapon DPS > hit > expertise > crit > strength"
+        },
+        {
+          "url": "https://www.method.gg/wow-forever/itemization-updates-in-world-of-warcraft-forever-expertise-spell-damage-more",
+          "date_or_status": "2026-09-15",
+          "used_for": "unified hit/crit, expertise replaces weapon skill"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/stats/",
+          "date_or_status": "unknown date",
+          "used_for": "AGI->crit 1/20, STR->AP, 14 AP = 1 DPS"
+        }
+      ]
+    },
+    "FURY": {
+      "priority": [
+        "DPS",
+        "HIT",
+        "SHIT",
+        "EXPERTISE",
+        "CRIT",
+        "SCRIT",
+        "HASTE",
+        "STR",
+        "AGI",
+        "AP",
+        "STA",
+        "ARMOR"
+      ],
+      "weights": {
+        "DPS": 7.0,
+        "HIT": 17.0,
+        "SHIT": 17.0,
+        "CRIT": 14.5,
+        "SCRIT": 14.5,
+        "STR": 1.0,
+        "AGI": 0.75,
+        "AP": 0.5,
+        "STA": 0.15,
+        "ARMOR": 0.01,
+        "EXPERTISE": 16.0,
+        "HASTE": 12.0
+      },
+      "caps": [
+        "HIT 8% vs level-63 bosses removes special-attack misses; dual-wield white hits still miss (27% base), so past 8% HIT keeps roughly 40% of its value (~7 per 1%)",
+        "EXPERTISE 6.5% (dodge reduction) removes boss dodges when attacking from behind; ~0 past that",
+        "HIT 5% vs level-equal mobs"
+      ],
+      "leveling": {
+        "DPS": 9.0,
+        "HIT": 10.0,
+        "SHIT": 10.0,
+        "STA": 0.4,
+        "EXPERTISE": 9.0
+      },
+      "confidence": "medium",
+      "notes": "Guide order at 60: weapon damage > hit > expertise > crit > strength (beta list continues agility > stamina). DPS weight is per point of one weapon's DPS (main hand worth a bit more than off hand); it sits below HIT/CRIT numerically because those are per 1%. Forever: Whirlwind hits with both weapons (off-hand matters more), crit autos double rage and proc Flurry, white rage normalized, Heroic Strike eats a rage-generating swing. Hit/crit unified so SHIT/SCRIT mirror HIT/CRIT. Guides suggest Arms with a 2H is the comfier leveling spec. HASTE is not ranked by any guide (scarce on gear; Skyborne racial gives 2%); weight 12 per 1% is an estimate (more swings, rage and Flurry uptime).",
+      "sources": [
+        {
+          "url": "https://wow.gg/guides/wow-forever-fury-warrior",
+          "date_or_status": "level 60, updated 2026-11-04 (preliminary pre-raid BiS)",
+          "used_for": "priority, hit/expertise caps, Forever mechanics"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/fury-warrior/",
+          "date_or_status": "beta (level 30 builds)",
+          "used_for": "cross-check: hit > crit > strength/AP"
+        },
+        {
+          "url": "https://wow.gg/guides/wow-forever-fury-warrior-beta",
+          "date_or_status": "beta, up to level 20",
+          "used_for": "lower priority (AGI > STA)"
+        },
+        {
+          "url": "https://www.method.gg/wow-forever/itemization-updates-in-world-of-warcraft-forever-expertise-spell-damage-more",
+          "date_or_status": "2026-09-15",
+          "used_for": "unified hit/crit, expertise"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/stats/",
+          "date_or_status": "unknown date",
+          "used_for": "conversions"
+        }
+      ]
+    },
+    "PROTECTION": {
+      "priority": [
+        "STA",
+        "DEF",
+        "ARMOR",
+        "AGI",
+        "DODGE",
+        "PARRY",
+        "BLOCK",
+        "EXPERTISE",
+        "HIT",
+        "SHIT",
+        "STR",
+        "CRIT",
+        "SCRIT",
+        "AP",
+        "DPS"
+      ],
+      "weights": {
+        "STA": 1.0,
+        "DEF": 1.0,
+        "ARMOR": 0.1,
+        "AGI": 0.75,
+        "DODGE": 10.0,
+        "PARRY": 9.0,
+        "BLOCK": 4.5,
+        "HIT": 9.0,
+        "SHIT": 9.0,
+        "STR": 0.45,
+        "CRIT": 4.0,
+        "SCRIT": 4.0,
+        "AP": 0.2,
+        "DPS": 1.5,
+        "EXPERTISE": 9.5
+      },
+      "caps": [
+        "DEF 440 total = uncrittable by level-63 raid bosses; after that DEF drops to ~0.6",
+        "HIT 8% vs level-63 bosses (threat attacks stop missing); ~2 per 1% after",
+        "EXPERTISE: 6.5% removes boss dodges; tanks attack from the front where parries also apply (~14% to remove both per coordinator data; guides give no exact parry figure). Top threat stat in wow.gg/Icy Veins threat list; ~3 per 1% past 6.5%",
+        "ARMOR reduction caps at 75% (~17,265 armor vs raid bosses)"
+      ],
+      "leveling": {
+        "DPS": 4.0,
+        "STR": 0.8,
+        "AP": 0.4,
+        "DEF": 0.4,
+        "HIT": 6.0
+      },
+      "confidence": "medium",
+      "notes": "STA anchored at 1.0 for tanks. Sources split on Defense: wow.gg/Icy Veins list defensive STA > armor > AGI > dodge/parry > defense (threat: expertise > hit > AGI > STR > STA), Mobalytics puts defense-to-440 right after stamina. Kept DEF second because the 440 crit-immunity target still applies per the Forever stats guide. Priority is guide importance; percent stats are per 1% so numerically larger. Forever: Shield Specialization gives rage on block and Master of Defense gives rage on dodge/parry, so avoidance also fuels threat; block value (1 per 20 STR) boosts Shield Slam. Hit/crit unified. HASTE not ranked by guides for tanks; omitted.",
+      "sources": [
+        {
+          "url": "https://wow.gg/guides/wow-forever-protection-warrior",
+          "date_or_status": "level 60, updated 2026-11-04",
+          "used_for": "defensive and threat priority, hit/expertise caps, Forever talents"
+        },
+        {
+          "url": "https://mobalytics.gg/wow-forever/classes/protection-warrior-guide-progress",
+          "date_or_status": "updated 2026-11-04 (search snippet only; page 403)",
+          "used_for": "STA then DEF to 440"
+        },
+        {
+          "url": "https://www.icy-veins.com/wow-forever/protection-warrior-tank-pve-stat-priority",
+          "date_or_status": "level 60 (search snippet only; page 403)",
+          "used_for": "cross-check of wow.gg order"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/protection-warrior/",
+          "date_or_status": "beta (level 30 builds)",
+          "used_for": "stat roles, Master of Defense"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/stats/",
+          "date_or_status": "unknown date",
+          "used_for": "440 defense, armor cap, AGI dodge/crit, block value per STR"
+        }
+      ]
+    }
+  }
+}

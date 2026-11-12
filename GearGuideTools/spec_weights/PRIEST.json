@@ -1,0 +1,47 @@
+{
+  "class": "PRIEST",
+  "specs": {
+    "DISCIPLINE": {
+      "priority": ["HEAL", "SP", "MP5", "INT", "SPI", "CRIT", "SCRIT", "STA"],
+      "weights": {"HEAL": 1.0, "SP": 1.0, "MP5": 0.7, "INT": 0.35, "SPI": 0.3, "CRIT": 4.0, "SCRIT": 4.0, "STA": 0.1},
+      "caps": ["No caps for healing. Hit does nothing for heals."],
+      "leveling": {"SP": 1.0, "HEAL": 0.6, "STA": 0.3, "SPI": 0.45, "INT": 0.4, "MP5": 0.6},
+      "confidence": "medium",
+      "notes": "Forever Disc is a single-target/absorb healer (PW:Shield, Penance, Power Infusion). Both guides put Healing Power first and Crit last. The mana stats are ranked differently: Warcraft Tavern has INT > MP5 > SPI, wow.gg has MP5 > SPI > INT. Per point, MP5 beats INT; Spirit is helped by the buffed Meditation (50% regen while casting), but Disc lacks Spiritual Guidance, so here INT edges out SPI. SP (damage+healing) heals as well as HEAL, so it gets the same weight. PW:Shield cannot crit, so crit is worth less than for Holy. CRIT and SCRIT carry equal weights because Forever unifies crit; percent stats are per 1%, so their raw numbers are larger even though crit is last on an item-budget basis. Haste exists in Forever but no Disc guide ranks it. Leveling: Disc levels with Smite/wand, so SP is the leveling anchor and STA/SPI go up.",
+      "sources": [
+        {"url": "https://www.warcrafttavern.com/forever/guides/discipline-priest/", "date_or_status": "level 60; Oct 15 patch build, no explicit date", "used_for": "priority, Meditation buff"},
+        {"url": "https://wow.gg/guides/wow-forever-discipline-priest-beta", "date_or_status": "2026-11-04, BiS preliminary", "used_for": "priority, role"},
+        {"url": "https://www.warcrafttavern.com/forever/guides/stats/", "date_or_status": "Forever, unknown date", "used_for": "unified crit/hit, INT->crit/mana conversions"}
+      ]
+    },
+    "HOLY": {
+      "priority": ["HEAL", "SP", "MP5", "SPI", "INT", "CRIT", "SCRIT", "STA"],
+      "weights": {"HEAL": 1.0, "SP": 1.0, "MP5": 0.7, "SPI": 0.45, "INT": 0.35, "CRIT": 5.0, "SCRIT": 5.0, "STA": 0.1},
+      "caps": ["No caps for healing. Hit does nothing for heals."],
+      "leveling": {"SP": 1.0, "HEAL": 0.6, "STA": 0.3, "SPI": 0.5, "INT": 0.4, "MP5": 0.6},
+      "confidence": "medium",
+      "notes": "Both guides put Healing Power first and Crit last. wow.gg orders the rest MP5 > SPI > INT; Warcraft Tavern orders them INT > MP5 > SPI. I followed wow.gg, because Spiritual Guidance turns Spirit into healing power on top of regen, which lifts SPI above INT for Holy. New Forever talents: Holy Binding (Flash Heal also heals you), Litany of Light (rewards varying spells for mana) and a buffed Meditation; Prayer of Mending is the capstone. CRIT and SCRIT carry equal weights because crit is unified. Crit is worth a bit more than for Disc (Holy crit talents), but it is still last by item budget. Haste exists but is not ranked. Leveling: Smite/wand damage, so SP leads.",
+      "sources": [
+        {"url": "https://www.warcrafttavern.com/forever/guides/holy-priest/", "date_or_status": "level 60; Oct 15 patch build, no explicit date", "used_for": "priority, Spiritual Guidance, new talents"},
+        {"url": "https://wow.gg/guides/wow-forever-holy-priest", "date_or_status": "2026-11-04", "used_for": "priority"},
+        {"url": "https://www.warcrafttavern.com/forever/guides/priest/", "date_or_status": "partly beta-based, no explicit date", "used_for": "cross-check of healer priority"}
+      ]
+    },
+    "SHADOW": {
+      "priority": ["HIT", "SHIT", "SP", "CRIT", "SCRIT", "INT", "MP5", "HEAL", "SPI", "STA"],
+      "weights": {"HIT": 12.0, "SHIT": 12.0, "SP": 1.0, "CRIT": 7.0, "SCRIT": 7.0, "INT": 0.35, "MP5": 0.3, "HEAL": 0.25, "SPI": 0.12, "STA": 0.1},
+      "caps": ["HIT 17% total vs raid bosses (16% base spell miss plus the 1% that cannot be removed); Shadow Focus 5/5 gives 5% to Shadow spells only, so about 12% comes from gear. Above the cap, HIT/SHIT are worth 0", "Against equal-level mobs about 4% total hit is enough, so Shadow Focus already covers it while leveling"],
+      "leveling": {"HIT": 3.0, "SHIT": 3.0, "STA": 0.3, "SPI": 0.4, "MP5": 0.5, "INT": 0.4},
+      "confidence": "medium",
+      "notes": "All three guides put Hit first (until capped), then Spell Power, then Crit; INT and Spirit come last, and Warcraft Tavern says Spirit is largely useless. In Forever, base spell damage was lowered and coefficients raised (wow.gg beta), which makes SP relatively stronger. Shadowform raises Shadow crit damage, so crit matters more than it did in classic Shadow. Hit and crit are unified in Forever, so HIT=SHIT and CRIT=SCRIT. Percent stats are per 1%; the priority order is by item budget. wow.gg also ranks Spell Penetration (no stat key for it). Haste exists but is not ranked. Forever reportedly makes bonus healing also grant 1/3 as much spell damage (RankedBoost, citing Blizzard), so HEAL gets 0.25. Set HEAL to 0 if the item parser already records that damage portion as SP. Leveling: Spirit Tap and wand-heavy play raise SPI/STA; hit matters little against equal-level mobs.",
+      "sources": [
+        {"url": "https://www.warcrafttavern.com/forever/guides/shadow-priest/", "date_or_status": "level 60; Oct 15 patch build, no explicit date", "used_for": "priority, talents"},
+        {"url": "https://wow.gg/guides/wow-forever-shadow-priest", "date_or_status": "2026-11-04", "used_for": "priority, hit cap and Shadow Focus"},
+        {"url": "https://wow.gg/guides/wow-forever-shadow-priest-beta", "date_or_status": "beta (search snippet), 2026-11-04 update", "used_for": "base damage lowered / coefficients raised"},
+        {"url": "https://mobalytics.gg/wow-forever/classes/shadow-priest-guide-progress", "date_or_status": "updated 2026-10-29 (search snippet only; page refused fetch)", "used_for": "priority cross-check"},
+        {"url": "https://www.icy-veins.com/wow-forever/shadow-priest-ranged-dps-pve-stat-priority", "date_or_status": "search snippet only (page refused fetch)", "used_for": "17% hit cap"},
+        {"url": "https://rankedboost.com/world-of-warcraft/forever/stats/", "date_or_status": "beta build 1.60.1.70862", "used_for": "unified hit/crit, bonus healing includes 1/3 damage"}
+      ]
+    }
+  }
+}

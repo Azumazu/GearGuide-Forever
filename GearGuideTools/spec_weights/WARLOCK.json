@@ -1,0 +1,173 @@
+{
+  "class": "WARLOCK",
+  "specs": {
+    "AFFLICTION": {
+      "priority": [
+        "HIT",
+        "SHIT",
+        "SP",
+        "CRIT",
+        "SCRIT",
+        "HASTE",
+        "INT",
+        "SPI",
+        "MP5",
+        "STA"
+      ],
+      "weights": {
+        "SP": 1.0,
+        "HIT": 14.0,
+        "SHIT": 14.0,
+        "CRIT": 7.0,
+        "SCRIT": 7.0,
+        "INT": 0.25,
+        "SPI": 0.18,
+        "MP5": 0.4,
+        "STA": 0.12,
+        "ARMOR": 0.002,
+        "HASTE": 5.0
+      },
+      "caps": [
+        "HIT/SHIT 17% vs level-63 raid bosses (Forever removes the guaranteed 1% miss); about 4% vs level-equal mobs. Suppression 5/5 gives 5% per wow.gg (so ~12% from gear). Past the cap HIT is worth ~0."
+      ],
+      "leveling": {
+        "HIT": 5.0,
+        "SHIT": 5.0,
+        "STA": 0.35,
+        "SPI": 0.35,
+        "INT": 0.3
+      },
+      "confidence": "medium",
+      "notes": "Icy Veins and wow.gg: Hit > Spell Power > Crit > Haste > Int. Warcraft Tavern lists Spell Power > Crit > Hit (no cap math). Biggest Forever change: DoTs can crit, and Pandemic/Soul Siphon/Improved Drains build on it, so CRIT is a real Affliction stat for the first time (in classic it was near 0). HASTE is weaker for Affliction because it does not speed DoT ticks or Wrack. Life Tap now scales with Spirit (1 mana per Spirit, 1.2 with Improved Life Tap), so SPI is higher than in classic. STA kept moderate for Life Tap/drain tanking. CRIT=SCRIT, HIT=SHIT (unified in Forever). INT->crit uses classic-era ~60.6 INT per 1% (gap fill). Per-1% weights exceed SP per point by design.",
+      "sources": [
+        {
+          "url": "https://www.icy-veins.com/wow-forever/affliction-warlock-ranged-dps-pve-stat-priority",
+          "date_or_status": "level 60, 'may change' (page returned 403; read via search excerpt)",
+          "used_for": "priority"
+        },
+        {
+          "url": "https://wow.gg/guides/wow-forever-affliction-warlock",
+          "date_or_status": "2026-11-04",
+          "used_for": "priority, 17% hit cap, Suppression 5%"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/warlock/",
+          "date_or_status": "updated 2026-11-11 (earlier versions were beta)",
+          "used_for": "DoT crit change, haste caveat, Life Tap/Spirit"
+        }
+      ]
+    },
+    "DEMONOLOGY": {
+      "priority": [
+        "HIT",
+        "SHIT",
+        "SP",
+        "CRIT",
+        "SCRIT",
+        "HASTE",
+        "INT",
+        "SPI",
+        "MP5",
+        "STA"
+      ],
+      "weights": {
+        "SP": 1.0,
+        "HIT": 14.0,
+        "SHIT": 14.0,
+        "CRIT": 7.0,
+        "SCRIT": 7.0,
+        "INT": 0.28,
+        "SPI": 0.18,
+        "STA": 0.15,
+        "MP5": 0.4,
+        "ARMOR": 0.003,
+        "HASTE": 6.0
+      },
+      "caps": [
+        "HIT/SHIT 17% vs level-63 raid bosses (Forever removes the guaranteed 1% miss); about 4% vs level-equal mobs. wow.gg build assumes Suppression 5% from talents. Past the cap HIT is worth ~0."
+      ],
+      "leveling": {
+        "HIT": 5.0,
+        "SHIT": 5.0,
+        "STA": 0.4,
+        "SPI": 0.35,
+        "INT": 0.3
+      },
+      "confidence": "medium",
+      "notes": "Icy Veins and wow.gg: Hit > Spell Power > Crit > Haste > Int; Warcraft Tavern: Spell Power (school matching the build) > Hit > Crit. Forever change: demons now scale with the warlock's gear (Unholy Power, Demonic Knowledge, Demonic Energies, Soul Link), and Demonic Pact reworks Demonic Sacrifice, so STA/INT carry a little extra value through the pet and Demonic Embrace. HASTE weighted just below CRIT. CRIT=SCRIT, HIT=SHIT. Exact pet-scaling ratios in Forever are not published; weights are estimates.",
+      "sources": [
+        {
+          "url": "https://www.icy-veins.com/wow-forever/demonology-warlock-ranged-dps-pve-stat-priority",
+          "date_or_status": "level 60 (page returned 403; read via search excerpt)",
+          "used_for": "priority"
+        },
+        {
+          "url": "https://wow.gg/guides/wow-forever-demonology-warlock",
+          "date_or_status": "2026-11-04, preliminary gear list",
+          "used_for": "priority, 17% hit cap"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/warlock/",
+          "date_or_status": "updated 2026-11-11",
+          "used_for": "pet scaling and Demonology talent changes"
+        }
+      ]
+    },
+    "DESTRUCTION": {
+      "priority": [
+        "HIT",
+        "SHIT",
+        "SP",
+        "HASTE",
+        "CRIT",
+        "SCRIT",
+        "INT",
+        "SPI",
+        "MP5",
+        "STA"
+      ],
+      "weights": {
+        "SP": 1.0,
+        "HIT": 14.0,
+        "SHIT": 14.0,
+        "CRIT": 9.0,
+        "SCRIT": 9.0,
+        "INT": 0.28,
+        "SPI": 0.17,
+        "MP5": 0.4,
+        "STA": 0.1,
+        "ARMOR": 0.002,
+        "HASTE": 9.5
+      },
+      "caps": [
+        "HIT/SHIT 17% vs level-63 raid bosses (Forever removes the guaranteed 1% miss); about 4% vs level-equal mobs. Suppression 5/5 gives 5% per wow.gg (recount if not talented). Past the cap HIT is worth ~0."
+      ],
+      "leveling": {
+        "HIT": 5.0,
+        "SHIT": 5.0,
+        "STA": 0.35,
+        "SPI": 0.35,
+        "INT": 0.3
+      },
+      "confidence": "medium",
+      "notes": "Icy Veins and wow.gg: Hit > Spell Power > Haste > Crit > Int (Haste ranked just above Crit; HASTE weighted just above CRIT). Warcraft Tavern: Spell Power/Fire > Crit > Hit. Forever changes: Ruin boosts both Fire and Shadow Destruction spells; new Incinerate capstone (25% more damage with Immolate up), Shadow and Flame, Bane of Havoc. Crit is the highest of the three warlock specs due to Ruin. Life Tap scales with Spirit. CRIT=SCRIT, HIT=SHIT. INT->crit uses classic-era ~60.6 INT per 1% (gap fill).",
+      "sources": [
+        {
+          "url": "https://www.icy-veins.com/wow-forever/destruction-warlock-ranged-dps-pve-stat-priority",
+          "date_or_status": "level 60, updated 2026-10-26, 'may shift' (page returned 403; read via search excerpt)",
+          "used_for": "priority, Ruin note"
+        },
+        {
+          "url": "https://wow.gg/guides/wow-forever-destruction-warlock",
+          "date_or_status": "2026-11-04",
+          "used_for": "priority, 17% hit cap, Suppression 5%"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/warlock/",
+          "date_or_status": "updated 2026-11-11",
+          "used_for": "talent changes, alternate priority"
+        }
+      ]
+    }
+  }
+}

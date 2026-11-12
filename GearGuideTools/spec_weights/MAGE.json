@@ -1,0 +1,170 @@
+{
+  "class": "MAGE",
+  "specs": {
+    "ARCANE": {
+      "priority": [
+        "HIT",
+        "SHIT",
+        "SP",
+        "CRIT",
+        "SCRIT",
+        "INT",
+        "MP5",
+        "SPI",
+        "STA"
+      ],
+      "weights": {
+        "SP": 1.0,
+        "HIT": 15.0,
+        "SHIT": 15.0,
+        "CRIT": 9.0,
+        "SCRIT": 9.0,
+        "INT": 0.4,
+        "MP5": 0.55,
+        "SPI": 0.15,
+        "STA": 0.06,
+        "ARMOR": 0.002
+      },
+      "caps": [
+        "HIT/SHIT 17% vs level-63 raid bosses (Forever removes the guaranteed 1% miss, so the full 17% counts); about 4% vs level-equal mobs. Elemental Precision talent gives up to 6% (Forever: applies to all schools per Warcraft Tavern). Past the cap HIT is worth ~0."
+      ],
+      "leveling": {
+        "HIT": 5.0,
+        "SHIT": 5.0,
+        "INT": 0.5,
+        "SPI": 0.35,
+        "MP5": 0.6,
+        "STA": 0.25
+      },
+      "confidence": "medium",
+      "notes": "Two Forever sources agree on Hit > Spell Power > Crit > Int, then MP5/Spirit (Icy Veins puts MP5 ahead of Spirit, wow.gg the reverse). Forever changes: Arcane Mind now grants Intellect and doubles Arcane crit bonus damage, so CRIT and INT are worth more than in classic; Arcane Meditation goes up to 50% (Spirit a bit better); Arcane Blast is mana hungry. Crit and Hit are unified for all attack types in Forever, so CRIT=SCRIT and HIT=SHIT. Haste exists in Forever and Icy Veins calls it valuable but rare; omitted because no source ranks it. Per-1% weights exceed SP per point by design; ordering holds per item-budget (1% crit/hit costs roughly 14-16 SP of budget). INT->crit uses the classic-era 59.5 INT per 1% at 60 (gap fill).",
+      "sources": [
+        {
+          "url": "https://www.icy-veins.com/wow-forever/arcane-mage-ranged-dps-pve-stat-priority",
+          "date_or_status": "level 60, updated 2026-10-28, 'subject to change' (page returned 403; read via search excerpt)",
+          "used_for": "priority, hit cap"
+        },
+        {
+          "url": "https://wow.gg/guides/wow-forever-arcane-mage",
+          "date_or_status": "level 60, 2026-11-04, preliminary pre-raid",
+          "used_for": "priority, 17% hit cap, Precision 6%"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/mage/",
+          "date_or_status": "Forever, undated",
+          "used_for": "talent changes (Arcane Mind, Arcane Meditation, Elemental Precision)"
+        }
+      ]
+    },
+    "FIRE": {
+      "priority": [
+        "HIT",
+        "SHIT",
+        "SP",
+        "CRIT",
+        "SCRIT",
+        "INT",
+        "MP5",
+        "SPI",
+        "STA"
+      ],
+      "weights": {
+        "SP": 1.0,
+        "HIT": 15.0,
+        "SHIT": 15.0,
+        "CRIT": 11.0,
+        "SCRIT": 11.0,
+        "INT": 0.32,
+        "MP5": 0.45,
+        "SPI": 0.1,
+        "STA": 0.06,
+        "ARMOR": 0.002
+      },
+      "caps": [
+        "HIT/SHIT 17% vs level-63 raid bosses (guaranteed 1% miss removed in Forever); about 4% vs level-equal mobs. Elemental Precision gives 2/4/6%. Past the cap HIT is worth ~0."
+      ],
+      "leveling": {
+        "HIT": 5.0,
+        "SHIT": 5.0,
+        "INT": 0.4,
+        "SPI": 0.3,
+        "MP5": 0.5,
+        "STA": 0.25
+      },
+      "confidence": "medium",
+      "notes": "Hit > Spell Power > Crit > Int > MP5/Spirit (Icy Veins and wow.gg agree on the top 4; they swap MP5 and Spirit). Icy Veins says Fire values Crit nearly as much as Spell Power, so Fire has the highest CRIT weight of the three specs. Forever changes: Heating Up (up to 3 crit-built stacks speeding Pyroblast), Combustion now lasts for 4 crits, Fire Power scales with fire effects on the target; Ignite still rewards crit. CRIT=SCRIT, HIT=SHIT (unified in Forever). Haste omitted: no Forever source ranks it. INT->crit uses classic-era 59.5 INT per 1% (gap fill).",
+      "sources": [
+        {
+          "url": "https://www.icy-veins.com/wow-forever/fire-mage-ranged-dps-pve-stat-priority",
+          "date_or_status": "level 60, 'subject to change' (page returned 403; read via search excerpt)",
+          "used_for": "priority, crit note, 1% miss removal"
+        },
+        {
+          "url": "https://wow.gg/guides/wow-forever-fire-mage",
+          "date_or_status": "level 60, 2026-11-04, preliminary pre-raid",
+          "used_for": "priority, 17% hit cap"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/mage/",
+          "date_or_status": "Forever, undated",
+          "used_for": "talent changes (Heating Up, Combustion, Fire Power)"
+        }
+      ]
+    },
+    "FROST": {
+      "priority": [
+        "HIT",
+        "SHIT",
+        "SP",
+        "CRIT",
+        "SCRIT",
+        "INT",
+        "MP5",
+        "SPI",
+        "STA"
+      ],
+      "weights": {
+        "SP": 1.0,
+        "HIT": 15.0,
+        "SHIT": 15.0,
+        "CRIT": 8.0,
+        "SCRIT": 8.0,
+        "INT": 0.28,
+        "MP5": 0.45,
+        "SPI": 0.1,
+        "STA": 0.07,
+        "ARMOR": 0.002
+      },
+      "caps": [
+        "HIT/SHIT 17% vs level-63 raid bosses (guaranteed 1% miss removed in Forever); about 4% vs level-equal mobs. Elemental Precision gives up to 6%. Past the cap HIT is worth ~0."
+      ],
+      "leveling": {
+        "HIT": 5.0,
+        "SHIT": 5.0,
+        "INT": 0.4,
+        "SPI": 0.3,
+        "MP5": 0.5,
+        "STA": 0.3
+      },
+      "confidence": "medium",
+      "notes": "Icy Veins and wow.gg both give Hit > Spell Power > Crit > Int > MP5 > Spirit. Forever changes: Ice Lance and Fingers of Frost added (FoF works on all spells and lets Ice Lance act as if the boss were frozen), Shatter now 3 ranks; crit matters more than in classic Frost but less than Fire. CRIT=SCRIT, HIT=SHIT (unified in Forever). Haste omitted: no Forever source ranks it. INT->crit uses classic-era 59.5 INT per 1% (gap fill).",
+      "sources": [
+        {
+          "url": "https://www.icy-veins.com/wow-forever/frost-mage-ranged-dps-pve-stat-priority",
+          "date_or_status": "level 60, updated 2026-10-26 (page returned 403; read via search excerpt)",
+          "used_for": "priority"
+        },
+        {
+          "url": "https://wow.gg/guides/wow-forever-frost-mage",
+          "date_or_status": "level 60, 2026-11-04, preliminary pre-raid",
+          "used_for": "priority, 17% hit cap, Precision 6%"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/mage/",
+          "date_or_status": "Forever, undated",
+          "used_for": "talent changes (Shatter, Fingers of Frost, Ice Lance)"
+        }
+      ]
+    }
+  }
+}

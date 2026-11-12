@@ -1,0 +1,10 @@
+# other projects in this folder
+XPRate/
+# build output and caches
+releases/
+GearGuideTools/.cache/
+__pycache__/
+*.tmp
+*.bak
+# never commit credentials
+.env

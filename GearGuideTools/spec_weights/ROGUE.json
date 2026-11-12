@@ -1,0 +1,223 @@
+{
+  "class": "ROGUE",
+  "specs": {
+    "ASSASSINATION": {
+      "priority": [
+        "EXPERTISE",
+        "HIT",
+        "SHIT",
+        "DPS",
+        "CRIT",
+        "SCRIT",
+        "HASTE",
+        "AGI",
+        "AP",
+        "STR",
+        "RDPS",
+        "STA",
+        "DODGE",
+        "SPI",
+        "ARMOR"
+      ],
+      "weights": {
+        "EXPERTISE": 15.0,
+        "HIT": 14.5,
+        "SHIT": 14.5,
+        "DPS": 12.5,
+        "CRIT": 12.0,
+        "SCRIT": 12.0,
+        "HASTE": 9.0,
+        "AGI": 1.0,
+        "AP": 0.6,
+        "STR": 0.6,
+        "RDPS": 0.5,
+        "STA": 0.12,
+        "DODGE": 0.1,
+        "SPI": 0.02,
+        "ARMOR": 0.01
+      },
+      "caps": [
+        "HIT 8% vs raid bosses for special attacks (300 weapon skill, no hit suppression in Forever); about 5% vs level-equal. Count Precision (now 3% max). After 8%, HIT only helps white hits (dual-wield white cap 27%), worth about 4 per 1%.",
+        "EXPERTISE about 6.5% from behind vs raid bosses: removes dodge, and parry doesn't happen from behind. About 14% if attacking from the front (dodge + parry). Past the from-behind cap it is worth about 0 for a rogue."
+      ],
+      "leveling": {
+        "DPS": 16.0,
+        "HIT": 7.0,
+        "SHIT": 7.0,
+        "STA": 0.35,
+        "EXPERTISE": 7.0
+      },
+      "confidence": "medium",
+      "notes": "Rogue AGI = 1 AP; 29 AGI = 1% crit; 14.5 AGI = 1% dodge. STR = 1 AP only. Forever: poisons scale with AP and can crit, and Malice also adds poison crit, so AP and CRIT are a bit higher than for Combat. Mutilate needs daggers, so main-hand dagger damage matters. Lethality is reduced to 20%. Haste means more white hits and more poison procs; it is rare on gear with no breakpoints. Hit and crit are unified (melee = spell), so SHIT=HIT and SCRIT=CRIT; this makes poisons use the same hit/crit. wow.gg (2026-11-04) order: expertise > hit > agi > weapon dmg > crit. Icy Veins: hit is top until the cap. Warcraft Tavern: AGI is the core stat; final priority waits for level-60 data. Percent stats are ranked by per-point weight, so they come before AGI. EXPERTISE (per 1%) lowers the chance to be dodged or parried. wow.gg (2026-11-04) ranks it 1st. From behind, 1% expertise prevents about as many failed attacks as 1% hit, so it is weighted just above HIT. The 6.5%/14% caps come from the coordinator's addendum and match the classic boss dodge figure; I did not confirm them in a rogue source. RDPS = 0.5: the thrown/bow/gun slot is mostly a stat slot (pulling, Deadly Throw-style use only).",
+      "sources": [
+        {
+          "url": "https://wow.gg/guides/wow-forever-assassination-rogue-beta",
+          "date_or_status": "published/updated 2026-11-04, preliminary",
+          "used_for": "priority, 8%/27% caps, expertise"
+        },
+        {
+          "url": "https://www.icy-veins.com/wow-forever/assassination-rogue-melee-dps-pve-stat-priority",
+          "date_or_status": "updated 2026-10-26, beta-based (read through search snippets only; the site returns 403 to fetch)",
+          "used_for": "hit top priority until caps"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/assassination-rogue/",
+          "date_or_status": "beta, undated",
+          "used_for": "conversions (29 AGI/crit, STR=1 AP), poisons scale with AP and can crit, daggers"
+        },
+        {
+          "url": "https://rankedboost.com/world-of-warcraft/forever/stats/haste/",
+          "date_or_status": "beta-file data (read through search snippets only)",
+          "used_for": "haste behaviour, unified hit/crit"
+        }
+      ]
+    },
+    "COMBAT": {
+      "priority": [
+        "EXPERTISE",
+        "HIT",
+        "SHIT",
+        "DPS",
+        "CRIT",
+        "SCRIT",
+        "HASTE",
+        "AGI",
+        "AP",
+        "STR",
+        "RDPS",
+        "STA",
+        "DODGE",
+        "SPI",
+        "ARMOR"
+      ],
+      "weights": {
+        "EXPERTISE": 15.5,
+        "HIT": 15.0,
+        "SHIT": 15.0,
+        "DPS": 13.5,
+        "CRIT": 13.0,
+        "SCRIT": 13.0,
+        "HASTE": 10.0,
+        "AGI": 1.0,
+        "AP": 0.55,
+        "STR": 0.55,
+        "RDPS": 0.5,
+        "STA": 0.12,
+        "DODGE": 0.1,
+        "SPI": 0.02,
+        "ARMOR": 0.01
+      },
+      "caps": [
+        "HIT 8% vs raid bosses for special attacks; Precision now gives only 3%, so gear needs about 5%. After that, HIT only reduces off-hand/white misses (cap 27%), worth about 5 per 1%.",
+        "EXPERTISE about 6.5% from behind vs raid bosses: removes dodge, and parry doesn't happen from behind. About 14% if attacking from the front (dodge + parry). Past the from-behind cap it is worth about 0 for a rogue. Combat's Weapon Expertise talent already gives 2%, so gear needs about 4.5% for the from-behind cap."
+      ],
+      "leveling": {
+        "DPS": 17.0,
+        "HIT": 7.0,
+        "SHIT": 7.0,
+        "STA": 0.35,
+        "EXPERTISE": 7.0
+      },
+      "confidence": "medium",
+      "notes": "Same conversions as classic: AGI = 1 AP + 1/29 crit; STR = 1 AP. Forever: Precision is nerfed to 3 ranks / 3%. Hack and Slash lets rogues change weapon type without respeccing (axes get extra-attack procs). Dual Wield Specialization is 2 ranks. Icy Veins is the only source that ranks Haste (5th, after crit). Haste is weighted high because Combat does the most white damage, but it is rare on gear and has no breakpoints. Hit/crit are unified, so SHIT=HIT and SCRIT=CRIT. Source orders: Icy Veins hit > agi > weapon dmg > crit > haste; wow.gg (2026-11-04) expertise > hit > agi > weapon dmg > crit; wow.gg beta weapon dmg > hit > agi > crit > str > sta; Mobalytics AGI > STR > STA. EXPERTISE (per 1%) lowers the chance to be dodged or parried. wow.gg (2026-11-04) ranks it 1st. From behind, 1% expertise prevents about as many failed attacks as 1% hit, so it is weighted just above HIT. The 6.5%/14% caps come from the coordinator's addendum and match the classic boss dodge figure; I did not confirm them in a rogue source. RDPS = 0.5: the thrown/bow/gun slot is mostly a stat slot (pulling, Deadly Throw-style use only).",
+      "sources": [
+        {
+          "url": "https://www.icy-veins.com/wow-forever/combat-rogue-melee-dps-pve-stat-priority",
+          "date_or_status": "beta-based (read through search snippets only)",
+          "used_for": "priority incl. haste"
+        },
+        {
+          "url": "https://wow.gg/guides/wow-forever-combat-rogue-beta",
+          "date_or_status": "published/updated 2026-11-04 (URL still says beta), preliminary",
+          "used_for": "priority, 8%/27% caps, expertise"
+        },
+        {
+          "url": "https://mobalytics.gg/wow-forever/classes/combat-rogue-guide",
+          "date_or_status": "beta launch (read through search snippets only)",
+          "used_for": "AGI > STR > STA"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/rogue/",
+          "date_or_status": "undated, beta",
+          "used_for": "Combat talent changes (Precision 3%, Weapon Expertise, Hack and Slash)"
+        },
+        {
+          "url": "https://rankedboost.com/world-of-warcraft/forever/stats/haste/",
+          "date_or_status": "beta-file data (read through search snippets only)",
+          "used_for": "haste behaviour, unified hit/crit"
+        }
+      ]
+    },
+    "SUBTLETY": {
+      "priority": [
+        "DPS",
+        "EXPERTISE",
+        "HIT",
+        "SHIT",
+        "CRIT",
+        "SCRIT",
+        "HASTE",
+        "AGI",
+        "AP",
+        "STR",
+        "RDPS",
+        "STA",
+        "DODGE",
+        "SPI",
+        "ARMOR"
+      ],
+      "weights": {
+        "DPS": 15.0,
+        "EXPERTISE": 14.8,
+        "HIT": 14.5,
+        "SHIT": 14.5,
+        "CRIT": 12.5,
+        "SCRIT": 12.5,
+        "HASTE": 8.0,
+        "AGI": 1.0,
+        "AP": 0.55,
+        "STR": 0.55,
+        "RDPS": 0.5,
+        "STA": 0.12,
+        "DODGE": 0.1,
+        "SPI": 0.02,
+        "ARMOR": 0.01
+      },
+      "caps": [
+        "HIT 8% vs raid bosses for special attacks, minus talent Precision if taken; dual-wield white cap 27%. Ambush builds may drop Precision once gear hit is enough. After 8%, HIT is worth about 4 per 1%.",
+        "EXPERTISE about 6.5% from behind vs raid bosses: removes dodge, and parry doesn't happen from behind. About 14% if attacking from the front (dodge + parry). Past the from-behind cap it is worth about 0 for a rogue."
+      ],
+      "leveling": {
+        "DPS": 18.0,
+        "HIT": 7.0,
+        "SHIT": 7.0,
+        "STA": 0.35,
+        "EXPERTISE": 7.0
+      },
+      "confidence": "low",
+      "notes": "Forever reworked Subtlety into two builds: Bleed (Hemorrhage, Rupture/Garrote) and Stealth Opener (Ambush, daggers required). Ghostly Strike is buffed with daggers. Main-hand weapon damage per hit drives most attacks, so weapon DPS is ranked first, as both wow.gg guides do. Bleeds ignore armor, and Serrated Blades gives 9% armor penetration (no GearGuide key). Haste is weighted lower than for Combat because damage is burst/bleed-heavy and haste doesn't speed up DoTs. Hit/crit are unified, so SHIT=HIT and SCRIT=CRIT. Icy Veins says it can't give Forever stat guidance yet. Warcraft Tavern waits for level-60 data and lists AGI as the core stat, then STR, AP, crit, STA. Source orders: wow.gg (2026-11-04) weapon dmg > expertise > hit > weapon skill > agi; wow.gg beta weapon dmg > hit > agi > crit > str > sta. EXPERTISE (per 1%) lowers the chance to be dodged or parried. wow.gg (2026-11-04) ranks it 2nd, after weapon damage. From behind, 1% expertise prevents about as many failed attacks as 1% hit, so it is weighted just above HIT. The 6.5%/14% caps come from the coordinator's addendum and match the classic boss dodge figure; I did not confirm them in a rogue source. RDPS = 0.5: the thrown/bow/gun slot is mostly a stat slot (pulling, Deadly Throw-style use only).",
+      "sources": [
+        {
+          "url": "https://wow.gg/guides/wow-forever-subtlety-rogue",
+          "date_or_status": "published/updated 2026-11-04, preliminary",
+          "used_for": "priority, caps, expertise"
+        },
+        {
+          "url": "https://wow.gg/guides/wow-forever-subtlety-rogue-beta",
+          "date_or_status": "beta, levels 1-20 (read through search snippets only)",
+          "used_for": "older order cross-check"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/subtlety-rogue/",
+          "date_or_status": "undated, awaiting level 60",
+          "used_for": "conversions, armor-ignore notes, dagger scaling"
+        },
+        {
+          "url": "https://www.icy-veins.com/wow-forever/subtlety-rogue-melee-dps-pve-stat-priority",
+          "date_or_status": "beta (read through search snippets only)",
+          "used_for": "no specific guidance yet"
+        }
+      ]
+    }
+  }
+}

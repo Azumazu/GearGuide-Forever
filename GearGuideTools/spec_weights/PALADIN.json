@@ -1,0 +1,225 @@
+{
+  "class": "PALADIN",
+  "specs": {
+    "HOLY": {
+      "priority": [
+        "HEAL",
+        "SP",
+        "INT",
+        "SPI",
+        "MP5",
+        "CRIT",
+        "SCRIT",
+        "STA"
+      ],
+      "weights": {
+        "HEAL": 1.0,
+        "SP": 1.0,
+        "INT": 0.6,
+        "SPI": 0.45,
+        "MP5": 1.1,
+        "CRIT": 6.0,
+        "SCRIT": 6.0,
+        "STA": 0.1
+      },
+      "caps": [
+        "No healing caps; hit is irrelevant for heals"
+      ],
+      "leveling": {
+        "STA": 0.3,
+        "STR": 0.4,
+        "DPS": 2.0,
+        "SPI": 0.6
+      },
+      "confidence": "medium",
+      "notes": "Guides agree: healing power > intellect > spirit > mp5 (> crit last on wow.gg; the wow.gg beta page swapped mp5 above spirit). SP counts fully for healing so SP = HEAL; Forever healing gear also carries spell power. Priority is guide importance per item budget; MP5 and CRIT are per point / per 1% so numerically bigger than INT/SPI. Forever: Reverence keeps part of spirit regen while casting, so spirit matters more than in classic and Holy no longer relies on crits for mana (crit ranked last, unlike classic Illumination builds). Crit unified across melee/spell so SCRIT = CRIT. INT = 15 mana and spell crit (paladins need the fewest INT per 1%). HASTE not ranked by Holy guides; omitted.",
+      "sources": [
+        {
+          "url": "https://wow.gg/guides/wow-forever-holy-paladin",
+          "date_or_status": "level 60, updated 2026-11-04",
+          "used_for": "priority"
+        },
+        {
+          "url": "https://www.icy-veins.com/wow-forever/holy-paladin-healer-pve-stat-priority",
+          "date_or_status": "updated 2026-10-20 (search snippet only; page 403)",
+          "used_for": "cross-check: healing > INT > SPI > MP5"
+        },
+        {
+          "url": "https://wow.gg/guides/wow-forever-holy-paladin-beta",
+          "date_or_status": "beta, up to level 20",
+          "used_for": "mp5/spirit order variant"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/paladin/",
+          "date_or_status": "beta builds; stat section placeholder",
+          "used_for": "Reverence spirit regen, unified hit/crit"
+        },
+        {
+          "url": "https://www.method.gg/wow-forever/itemization-updates-in-world-of-warcraft-forever-expertise-spell-damage-more",
+          "date_or_status": "2026-09-15",
+          "used_for": "healing gear gets spell power"
+        }
+      ]
+    },
+    "PROTECTION": {
+      "priority": [
+        "STA",
+        "DEF",
+        "SP",
+        "INT",
+        "HIT",
+        "SHIT",
+        "EXPERTISE",
+        "DODGE",
+        "PARRY",
+        "BLOCK",
+        "ARMOR",
+        "AGI",
+        "STR",
+        "MP5",
+        "CRIT",
+        "SCRIT",
+        "DPS",
+        "AP"
+      ],
+      "weights": {
+        "STA": 1.0,
+        "DEF": 1.0,
+        "SP": 0.8,
+        "INT": 0.55,
+        "HIT": 9.0,
+        "SHIT": 9.0,
+        "DODGE": 8.0,
+        "PARRY": 7.0,
+        "BLOCK": 6.0,
+        "ARMOR": 0.1,
+        "AGI": 0.55,
+        "STR": 0.45,
+        "MP5": 0.5,
+        "CRIT": 3.0,
+        "SCRIT": 3.0,
+        "DPS": 1.0,
+        "AP": 0.2,
+        "EXPERTISE": 7.5
+      },
+      "caps": [
+        "DEF 440 total = uncrittable by level-63 raid bosses; DEF ~0.5 after",
+        "HIT 8% vs level-63 bosses so Judgement taunt / Holy Strike land (Precision gives +3%); ~2 per 1% after",
+        "EXPERTISE: 6.5% removes boss dodges; from the front parries also apply (~14% to remove both per coordinator data); ~2 per 1% after"
+      ],
+      "leveling": {
+        "DPS": 3.5,
+        "STR": 0.8,
+        "AP": 0.4,
+        "DEF": 0.4,
+        "SP": 1.0
+      },
+      "confidence": "low",
+      "notes": "STA anchored at 1.0. Sources disagree: wow.gg level-60 guide stamina > defense > spell power > intellect > strength; Gfinity puts hit cap first then defense/block, stamina/armor, spell power, strength; wow.gg beta was offensive (weapon damage, hit, STR, INT, SP). Followed the level-60 wow.gg order and slotted hit/avoidance after INT. Forever: Protection threat scales with spell power (Holy Shield, Consecration, Seal of Fury, Retribution Aura), Shield Specialization returns 4% mana on block and Holy Shield adds 30% block, so BLOCK is closer to DODGE than in classic. Hit/crit unified so SHIT/SCRIT mirror HIT/CRIT. Priority is guide importance; percent stats are per 1%. HASTE not ranked by guides for tanks; omitted.",
+      "sources": [
+        {
+          "url": "https://wow.gg/guides/wow-forever-protection-paladin",
+          "date_or_status": "level 60, updated 2026-11-04",
+          "used_for": "priority"
+        },
+        {
+          "url": "https://www.gfinityesports.com/article/world-of-warcraft-forever-protection-paladin-guide-build-rotation",
+          "date_or_status": "updated 2026-10-28",
+          "used_for": "cross-check, block/Shield Specialization, hit"
+        },
+        {
+          "url": "https://wow.gg/guides/wow-forever-protection-paladin-beta",
+          "date_or_status": "beta (search snippet)",
+          "used_for": "offensive variant"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/paladin/",
+          "date_or_status": "beta builds",
+          "used_for": "Protection scales with spell power"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/stats/",
+          "date_or_status": "unknown date",
+          "used_for": "440 defense, conversions"
+        }
+      ]
+    },
+    "RETRIBUTION": {
+      "priority": [
+        "DPS",
+        "HIT",
+        "SHIT",
+        "EXPERTISE",
+        "STR",
+        "SP",
+        "CRIT",
+        "SCRIT",
+        "HASTE",
+        "INT",
+        "AGI",
+        "AP",
+        "MP5",
+        "STA",
+        "ARMOR"
+      ],
+      "weights": {
+        "DPS": 7.0,
+        "HIT": 13.0,
+        "SHIT": 13.0,
+        "STR": 1.0,
+        "SP": 0.8,
+        "CRIT": 10.0,
+        "SCRIT": 10.0,
+        "INT": 0.6,
+        "AGI": 0.55,
+        "AP": 0.5,
+        "MP5": 0.45,
+        "STA": 0.15,
+        "ARMOR": 0.01,
+        "EXPERTISE": 12.0,
+        "HASTE": 8.0
+      },
+      "caps": [
+        "HIT 8% vs level-63 bosses for melee; past that hit still helps spell/holy portions, ~3 per 1%",
+        "EXPERTISE 6.5% (dodge reduction) removes boss dodges from behind; ranked right after hit; ~0 past that"
+      ],
+      "leveling": {
+        "DPS": 9.0,
+        "STA": 0.4,
+        "HIT": 8.0,
+        "SHIT": 8.0,
+        "MP5": 0.8,
+        "EXPERTISE": 6.0
+      },
+      "confidence": "medium",
+      "notes": "Level-60 guides: weapon damage > hit > expertise > strength > spell power (wow.gg); Icy Veins' Twist of Light build swaps to spell power > strength (raise SP to ~1.1 for that build). Crit sits outside the level-60 top 5 but the beta list and spec overview rate it highly via Conviction (+5% melee crit) and reworked Vengeance (30s, 5 stacks). Forever: one hit/crit bonus works for weapon and Holy damage (SHIT/SCRIT = HIT/CRIT); Protector/Champion of the Light converts INT into spell power at a low rate, so INT outranks AGI; Judgement no longer consumes the seal. Priority is guide importance; percent stats are per 1%. HASTE not ranked by guides; weight 8 per 1% is an estimate (slow 2H, more Seal of Command procs).",
+      "sources": [
+        {
+          "url": "https://wow.gg/guides/wow-forever-retribution-paladin",
+          "date_or_status": "level 60, updated 2026-11-04",
+          "used_for": "priority"
+        },
+        {
+          "url": "https://www.icy-veins.com/wow-forever/retribution-paladin-melee-dps-pve-stat-priority",
+          "date_or_status": "updated 2026-10-26 (search snippet only; page 403)",
+          "used_for": "hit 8% / expertise 6.5% caps, Twist of Light SP > STR"
+        },
+        {
+          "url": "https://wow.gg/guides/paladin-retribution-forever-overview",
+          "date_or_status": "2026-09-19",
+          "used_for": "STR/crit via Conviction & Vengeance, unified hit, INT->SP"
+        },
+        {
+          "url": "https://wow.gg/guides/wow-forever-retribution-paladin-beta",
+          "date_or_status": "beta (search snippet)",
+          "used_for": "crit/INT/AGI ordering"
+        },
+        {
+          "url": "https://www.warcrafttavern.com/forever/guides/retribution-paladin/",
+          "date_or_status": "beta (level 30 builds)",
+          "used_for": "Champion of the Light INT->SP"
+        }
+      ]
+    }
+  }
+}
