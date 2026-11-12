@@ -376,7 +376,21 @@ API_HEADER = [
 # 2 = item.src holds indices into GearGuide_Data.sources
 # 3 = a source may also hold "l", an index into GearGuide_Data.locs (map locations for the world map)
 DB_FORMAT = 3
-SOURCE_KEYS = ("t", "n", "z", "l", "k")
+SOURCE_KEYS = ("t", "n", "z", "l", "k", "f")  # f = "A"/"H" for faction-only sources
+
+
+def tag_item_factions(items: dict[int, dict]) -> int:
+    """item["fa"] = "A"/"H" when every known source belongs to that one faction (Alliance-only quest
+    rewards, city vendors, PvP rank gear). Items with any neutral source stay unmarked."""
+    tagged = 0
+    for rec in items.values():
+        factions = {s.get("f") for s in rec.get("src") or [] if isinstance(s, dict)}
+        if len(factions) == 1 and None not in factions:
+            rec["fa"] = factions.pop()
+            tagged += 1
+        else:
+            rec.pop("fa", None)
+    return tagged
 
 
 def intern_sources(items: dict[int, dict]) -> tuple[list[dict], list[list]]:
@@ -400,7 +414,7 @@ def intern_sources(items: dict[int, dict]) -> tuple[list[dict], list[list]]:
                     locs.append(s["loc"])
                     loc_index[lk] = len(locs)
                 l = loc_index[lk]
-            key = (s.get("t"), s.get("n"), s.get("z"), l, s.get("k"))
+            key = (s.get("t"), s.get("n"), s.get("z"), l, s.get("k"), s.get("f"))
             if key not in index:
                 pool.append({k: v for k, v in zip(SOURCE_KEYS, key) if v})
                 index[key] = len(pool)
@@ -415,6 +429,7 @@ def intern_sources(items: dict[int, dict]) -> tuple[list[dict], list[list]]:
 
 def write_lua(out: Path, items: dict[int, dict], meta: dict, header: list[str] | None = None) -> None:
     items = {iid: dict(rec) for iid, rec in items.items()}  # don't mutate the caller's records
+    tag_item_factions(items)
     pool, locs = intern_sources(items)
     meta = {**meta, "format": DB_FORMAT}
     lines = list(header or API_HEADER) + [

@@ -138,12 +138,21 @@ function ns:InvalidateItems()
     self:RequestRefresh()
 end
 
+-- "A" (Alliance) or "H" (Horde); nil before the faction is known (e.g. Pandaren choosing).
+function ns.PlayerFaction()
+    local group = UnitFactionGroup and UnitFactionGroup("player")
+    return (group == "Alliance" and "A") or (group == "Horde" and "H") or nil
+end
+
 function ns:GetSources(id)
     local out, seen = {}, {}
+    local faction = ns.PlayerFaction()
     local function add(list)
         for _, s in ipairs(list or {}) do
             local key = (s.t or "") .. "|" .. (s.n or "") .. "|" .. (s.z or "")
-            if not seen[key] then seen[key] = true; out[#out + 1] = s end
+            -- Hide the other faction's quests, city vendors and PvP rewards.
+            local mine = not s.f or not faction or s.f == faction
+            if mine and not seen[key] then seen[key] = true; out[#out + 1] = s end
         end
     end
     local dbItem = GearGuide_Data.items[id]
@@ -154,7 +163,7 @@ function ns:GetSources(id)
             if type(s) == "number" then s = pool and pool[s] end
             if type(s) == "table" then
                 if s.l and locs and locs[s.l] and not s.loc then
-                    s = { t = s.t, n = s.n, z = s.z, k = s.k, loc = locs[s.l] }  -- format 3: map location
+                    s = { t = s.t, n = s.n, z = s.z, k = s.k, f = s.f, loc = locs[s.l] }  -- format 3: map location
                 end
                 resolved[#resolved + 1] = s
             end
@@ -374,6 +383,9 @@ end
 -- Can `class` use this item once they reach its required level?
 function ns:IsUsable(item, class, level)
     if not ns.EQUIPLOC_GROUP[item.eq] then return false end
+    -- Items only the other faction can get (all known sources are theirs).
+    local faction = ns.PlayerFaction()
+    if item.fa and faction and item.fa ~= faction then return false end
     if item.cls then
         local allowed = false
         for _, c in ipairs(item.cls) do if c == class then allowed = true break end end

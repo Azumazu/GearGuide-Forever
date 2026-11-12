@@ -329,13 +329,35 @@ def merge_locations(locs: list) -> list | None:
     return out
 
 
+# ----------------------------------------------------------------------------- factions
+NPC_FRIENDLY_TO, QUEST_REQUIRED_RACES = 13, 6
+# Race bits (QuestieDB raceMaskById): classic races plus Forever's Skyborne (bits 32/33).
+ALLIANCE_RACES = 1 + 4 + 8 + 64 + (1 << 32)      # Human, Dwarf, Night Elf, Gnome, Skyborne (Alliance)
+HORDE_RACES = 2 + 16 + 32 + 128 + (1 << 33)       # Orc, Undead, Tauren, Troll, Skyborne (Horde)
+
+
+def npc_faction(store, nid) -> str | None:
+    """'A' or 'H' for NPCs friendly to only one faction (e.g. city vendors); None if both/neither."""
+    v = text(store.field("Npc", nid, NPC_FRIENDLY_TO))
+    return v if v in ("A", "H") else None
+
+
+def quest_faction(store, qid) -> str | None:
+    races = store.field("Quest", qid, QUEST_REQUIRED_RACES)
+    if not isinstance(races, int) or races == 0:
+        return None
+    alliance, horde = bool(races & ALLIANCE_RACES), bool(races & HORDE_RACES)
+    return "A" if alliance and not horde else "H" if horde and not alliance else None
+
+
 # ----------------------------------------------------------------------------- sources
 def _npc_source(store, zones, kind, nid):
     name = store.name("Npc", nid)
     if not name:
         return None
     return {"t": kind, "n": name, "z": store.field("Npc", nid, NPC_ZONE) or None,
-            "loc": location(zones, store.field("Npc", nid, NPC_SPAWNS))}
+            "loc": location(zones, store.field("Npc", nid, NPC_SPAWNS)),
+            "f": npc_faction(store, nid) if kind == "vendor" else None}
 
 
 def _quest_giver_location(store, zones, qid):
@@ -392,7 +414,7 @@ def item_sources(store: QuestieStore, iid: int, zones: ZoneData | None = None) -
         if name:
             zone = store.field("Quest", qid, QUEST_ZONE_OR_SORT)
             out.append({"t": "quest", "n": name, "z": zone if isinstance(zone, int) and zone > 0 else None,
-                        "loc": _quest_giver_location(store, zones, qid)})
+                        "loc": _quest_giver_location(store, zones, qid), "f": quest_faction(store, qid)})
 
     unique = {}
     for src in out:
@@ -414,6 +436,11 @@ PVP_RANK = re.compile(r"^(Private's|Scout's|Corporal's|Grunt's|Sergeant's|Master
                       r"Knight-Captain's|Centurion's|Knight-Champion's|Champion's|Lieutenant Commander's|"
                       r"Lieutenant General's|Commander's|General's|Marshal's|Warlord's|Field Marshal's|"
                       r"Grand Marshal's|High Warlord's)\s")
+ALLIANCE_RANKS = {"Private's", "Corporal's", "Master Sergeant's", "Sergeant Major's", "Knight's",
+                  "Knight-Lieutenant's", "Knight-Captain's", "Knight-Champion's", "Lieutenant Commander's",
+                  "Commander's", "Marshal's", "Field Marshal's", "Grand Marshal's"}
+HORDE_RANKS = {"Scout's", "Grunt's", "First Sergeant's", "Stone Guard's", "Blood Guard's", "Legionnaire's",
+               "Centurion's", "Champion's", "Lieutenant General's", "General's", "Warlord's", "High Warlord's"}
 STARTER = re.compile(r"^(Recruit's|Apprentice's|Neophyte's|Acolyte's|Squire's|Footpad's|Initiate's|Novice's|"
                      r"Trapper's|Rugged Trapper's|Primitive|Tribal|Ancestral|Thug|Worn|Bent|Battleworn|Hunting|Tarnished)\b")
 FOREVER_ID_START = 260000
@@ -451,15 +478,19 @@ def infer_sources(items: dict[int, dict], store: QuestieStore, zones: ZoneData) 
         name, quality, ilvl = rec.get("n") or "", rec.get("q") or 1, rec.get("il") or 0
         if name in recipes:
             rid, recipe_name, prof = recipes[name]
-            # Where to get the recipe: its first source with a map location (vendor, drop, quest).
-            recipe_src = next((s for s in item_sources(store, rid, zones) if s.get("loc")), None)
+            # Where to get the recipe: first source with a map location, preferring ones both factions
+            # can use. The crafted item itself stays faction-neutral (it can be traded).
+            located = [s for s in item_sources(store, rid, zones) if s.get("loc")]
+            recipe_src = next((s for s in located if not s.get("f")), located[0] if located else None)
             src = {"t": "craft", "n": f"{prof} ({recipe_name})"}
             if recipe_src:
                 src["z"] = recipe_src.get("z")
                 src["loc"] = recipe_src["loc"]
             add(rec, {k: v for k, v in src.items() if v is not None}, "crafted")
         elif PVP_RANK.match(name):
-            add(rec, {"t": "pvp", "n": "PvP rank reward"}, "pvp")
+            rank = PVP_RANK.match(name).group(1)
+            faction = "A" if rank in ALLIANCE_RANKS else "H" if rank in HORDE_RANKS else None
+            add(rec, {k: v for k, v in {"t": "pvp", "n": "PvP rank reward", "f": faction}.items() if v}, "pvp")
         elif STARTER.match(name) and (rec.get("rl") or 0) <= 1 and quality <= 1:
             add(rec, {"t": "start", "n": "Starting equipment"}, "starting gear")
         elif rec.get("r") and ilvl > 0:

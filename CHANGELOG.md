@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.2 (2026-11-12)
+
+Item sources refreshed (11347 gear items, client build 70888).
+- 4278 new item sources
+- Faction aware: Alliance-only and Horde-only items (faction quest rewards, city vendors, PvP rank
+  gear) are hidden for the other faction, and the other faction's sources are left out of the list
+
 ## 0.4.1 (2026-11-12)
 
 Item sources refreshed (11347 gear items, client build 70888).
