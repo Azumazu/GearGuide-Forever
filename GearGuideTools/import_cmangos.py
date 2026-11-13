@@ -6,7 +6,7 @@ https://github.com/cmangos/classic-db), used at build time only.
     python import_cmangos.py ClassicDB_1_12_1_z2815.sql.gz      # print a summary
 
 Reads item_template.BuyPrice for every item that some vendor sells (npc_vendor and
-npc_vendor_template). The result becomes item["bp"] (copper) in Data.lua: the default gold price for
+npc_vendor_template), except PvP rank gear (bought with Honor in WoW: Forever). The result becomes item["bp"] (copper) in Data.lua: the default gold price for
 the item's vendor sources. Prices seen at a vendor in game (item["vp"]) always win, because
 WoW: Forever may have changed a price, and reputation discounts apply on top.
 """
@@ -74,22 +74,40 @@ def read_tables(path: Path, wanted: set[str]) -> dict[str, list[dict]]:
     return out
 
 
-def buy_prices(path: Path) -> dict[int, int]:
-    """{item id: buy price in copper} for items a vendor sells and that cost gold."""
+def vendor_data(path: Path) -> tuple[dict[int, int], dict[int, int]]:
+    """({item id: buy price in copper}, {item id: PvP rank needed}) for items a vendor sells."""
     t = read_tables(path, {"item_template", "npc_vendor", "npc_vendor_template"})
     sold = {r["item"] for r in t["npc_vendor"] + t["npc_vendor_template"] if isinstance(r.get("item"), int)}
-    prices = {}
+    prices, ranks = {}, {}
     for r in t["item_template"]:
         iid, price, count = r.get("entry"), r.get("BuyPrice"), r.get("BuyCount") or 1
+        if iid in sold and isinstance(r.get("requiredhonorrank"), int) and r["requiredhonorrank"] > 0:
+            ranks[iid] = r["requiredhonorrank"]
+        # PvP rank gear: WoW: Forever's honor vendors charge Honor Points (and battleground marks),
+        # not the vanilla gold price, so no default price is shipped for it. The real cost is
+        # learned the first time a player opens that vendor.
+        if r.get("requiredhonorrank"):
+            continue
         if iid in sold and isinstance(price, int) and price > 0:
             prices[iid] = price // max(1, count)  # price of one item (gear is always sold singly)
-    return prices
+    return prices, ranks
 
 
-def merge_prices(items: dict[int, dict], prices: dict[int, int]) -> int:
-    """Sets item["bp"] on every item that has a vendor source; returns how many got a price."""
+def buy_prices(path: Path) -> dict[int, int]:
+    """{item id: buy price in copper} for items a vendor sells and that cost gold."""
+    return vendor_data(path)[0]
+
+
+def merge_prices(items: dict[int, dict], prices: dict[int, int], ranks: dict[int, int] | None = None) -> int:
+    """Sets item["bp"] on every item that has a vendor source, and item["hr"] (PvP rank needed: the
+    item is bought with Honor) on honor vendor gear; returns how many got a gold price."""
     n = 0
     for iid, rec in items.items():
+        if ranks is not None:
+            if ranks.get(iid):
+                rec["hr"] = ranks[iid]
+            else:
+                rec.pop("hr", None)
         p = prices.get(iid)
         if p and any(isinstance(s, dict) and s.get("t") == "vendor" for s in rec.get("src") or []):
             rec["bp"] = p

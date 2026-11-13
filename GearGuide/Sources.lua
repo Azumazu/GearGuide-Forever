@@ -160,12 +160,29 @@ end
 local function merchantCosts(i)
     if not (GetMerchantItemCostInfo and GetMerchantItemCostItem) then return nil end
     local r = { GetMerchantItemCostInfo(i) }
-    local count = tonumber(r[#r]) or 0  -- some clients return honor, arena points, count
-    local out = {}
+    local count = tonumber(r[#r]) or 0
+    local out, seen = {}, {}
     for j = 1, count do
         local icon, amount, link, currencyName = GetMerchantItemCostItem(i, j)
         local name = currencyName or (link and link:match("%[(.-)%]"))
-        if name and (amount or 0) > 0 then out[#out + 1] = { n = name, q = amount, i = icon } end
+        if name and (amount or 0) > 0 then
+            out[#out + 1] = { n = name, q = amount, i = icon }
+            seen[name:lower():gsub(" points?$", "")] = true
+        end
+    end
+    -- Clients with the older signature return honor, arena points, count: those points are not in
+    -- the cost-item list above, so add them (once, if the list didn't already name them).
+    if #r >= 3 then
+        local faction = UnitFactionGroup and Plain(UnitFactionGroup("player"))
+        local points = {
+            { tonumber(r[1]), "Honor Points", "honor",
+              "Interface\\PVPFrame\\PVP-Currency-" .. (faction == "Horde" and "Horde" or "Alliance") },
+            { tonumber(r[2]), "Arena Points", "arena", "Interface\\PVPFrame\\PVP-ArenaPoints-Icon" },
+        }
+        for k = #points, 1, -1 do
+            local amount, name, key, icon = points[k][1], points[k][2], points[k][3], points[k][4]
+            if (amount or 0) > 0 and not seen[key] then table.insert(out, 1, { n = name, q = amount, i = icon }) end
+        end
     end
     return out[1] and out or nil
 end

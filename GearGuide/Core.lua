@@ -236,6 +236,13 @@ function ns:GetVendorPrice(id, vendor)
     if dbItem.vp and dbItem.vp[vendor] then return dbItem.vp[vendor] end
     -- Default gold price (item.bp, from the build's vendor database): the same at every vendor.
     if dbItem.bp and dbItem.bp > 0 then return { g = dbItem.bp } end
+    -- PvP rank gear (item.hr) is bought with Honor. Every honor vendor charges the same, so a
+    -- price seen at any of them (the other faction's included) applies here too.
+    if dbItem.hr then
+        for _, p in pairs(learned or {}) do return p end
+        for _, p in pairs(dbItem.vp or {}) do return p end
+        return { honor = true }  -- cost not seen yet: say it's Honor rather than nothing
+    end
     return nil
 end
 
@@ -257,6 +264,9 @@ function ns.FormatPrice(p)
     for _, cost in ipairs(p.c or {}) do
         local icon = cost.i and ("|T" .. cost.i .. ":0|t ") or ""
         parts[#parts + 1] = icon .. (cost.q or 1) .. " " .. (cost.n or "?")
+    end
+    if p.honor and #parts == 0 then
+        return "Honor |cff888888(open the vendor once to see the price)|r"
     end
     return table.concat(parts, " + ")
 end

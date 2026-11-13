@@ -174,15 +174,17 @@ def main() -> int:
     # Default vendor gold prices (item.bp): from a cmangos classic-db dump when given, else kept from
     # the shipped Data.lua for items that still have a vendor source.
     if args.cmangos:
-        from import_cmangos import CREDITS as CM_CREDITS, buy_prices, merge_prices
-        priced = merge_prices(items, buy_prices(args.cmangos))
+        from import_cmangos import CREDITS as CM_CREDITS, merge_prices, vendor_data
+        priced = merge_prices(items, *vendor_data(args.cmangos))
         print(f"cmangos vendor prices: {priced} items")
         meta["credits"] = "; ".join(c for c in (meta.get("credits"), CM_CREDITS) if c)
     else:
         for iid, rec in items.items():
-            old_bp = (old.get(iid) or {}).get("bp")
-            if old_bp and any(isinstance(s, dict) and s.get("t") == "vendor" for s in rec.get("src") or []):
-                rec["bp"] = old_bp
+            old_rec = old.get(iid) or {}
+            if old_rec.get("bp") and any(isinstance(s, dict) and s.get("t") == "vendor" for s in rec.get("src") or []):
+                rec["bp"] = old_rec["bp"]
+            if old_rec.get("hr"):
+                rec["hr"] = old_rec["hr"]
         if any(r.get("bp") for r in items.values()):
             from import_cmangos import CREDITS as CM_CREDITS
             meta["credits"] = "; ".join(c for c in (meta.get("credits"), CM_CREDITS) if c)
@@ -195,7 +197,8 @@ def main() -> int:
         return 1
 
     added, removed, changed, new_sources, sources_changed = diff(old, items)
-    new_prices = sum(1 for i, r in items.items() if r.get("bp") and r.get("bp") != (old.get(i) or {}).get("bp"))
+    new_prices = sum(1 for i, r in items.items()
+                     if (r.get("bp"), r.get("hr")) != ((old.get(i) or {}).get("bp"), (old.get(i) or {}).get("hr")))
     questie_before, questie_now = old_meta.get("questie"), meta.get("questie")
     questie_updated = bool(questie_now) and questie_before != questie_now
     print(f"Shipped database: {len(old)} items (client build {old_meta.get('build', '?')})")

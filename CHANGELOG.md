@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.1 (2026-11-13)
+
+- Honor vendor prices: PvP rank gear no longer shows the old vanilla gold price (WoW: Forever sells it
+  for Honor). Opening an honor vendor records the real cost (Honor Points, battleground marks and any
+  gold), and it then shows on every honor vendor for that item. Until then the source says "Honor".
+- Fixed: on clients that report Honor/Arena Points separately, those were left out of recorded prices.
+
 ## 0.8.0 (2026-11-13)
 
 - Patrolling rare mobs: their route is drawn on the world map like roaming vendors' (Ghost Howl,
