@@ -499,8 +499,9 @@ function Skin:WindowBackdrop(f, opts)
             t:SetPoint(b[1], x1, y1)
             t:SetPoint(b[2], x2, y2)
             if b[6] then t:SetWidth(math.floor(band * 1.4)) else t:SetHeight(band) end
-            setGradient(t, b[3], b[4], b[5])  -- hidden when the client has no gradient API
-            v[i] = t
+            -- Hidden when the client has no gradient API; only working bands are listed, so
+            -- callers that show/hide them (mini tracker fade) never reveal a plain white texture.
+            if setGradient(t, b[3], b[4], b[5]) then v[#v + 1] = t end
         end
         f.vignette = v
     end

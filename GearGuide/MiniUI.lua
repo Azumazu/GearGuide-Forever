@@ -257,14 +257,25 @@ end
 
 local function applyOpacity()
     local o = opacity() * chrome
-    if frame.SetBackdropColor then
-        local r, g, b, a = color("bg")
+    -- Fully hidden: drop the backdrop itself. Its 1px edge doesn't reliably honor the color's
+    -- alpha in the game client, so a 0-alpha border color alone can leave the outline visible.
+    if frame.SetBackdrop then
+        local cleared = rawget(frame, "ggNoBackdrop")
+        if o <= 0 and not cleared then
+            frame:SetBackdrop(nil)
+            frame.ggNoBackdrop = true
+        elseif o > 0 and cleared then
+            ns.Skin:SetBackdrop(frame, "bg", "edge")
+            frame.ggNoBackdrop = nil
+        end
+        local r, g, b, a = color("bg")  -- no-op while cleared
         frame:SetBackdropColor(r, g, b, a * o)
         r, g, b, a = color("edge")
         frame:SetBackdropBorderColor(r, g, b, a * o)
-    elseif frame.ggFlat then
-        for _, t in pairs(frame.ggFlat) do t:SetAlpha(o) end
+    elseif rawget(frame, "ggFlat") then
+        for _, t in pairs(frame.ggFlat) do t:SetAlpha(o); t:SetShown(o > 0) end
     end
+    for _, t in ipairs(frame.vignette or {}) do t:SetShown(o > 0) end
     for _, t in ipairs(frame.vignette or {}) do t:SetAlpha(o) end
     frame.headerBg:SetAlpha(o)
     frame.track:SetAlpha(o)

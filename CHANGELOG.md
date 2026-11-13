@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.1 (2026-11-13)
+
+- Mini tracker hover mode (and 0% background opacity) now also hides the frame's border.
+
 ## 0.11.0 (2026-11-13)
 
 - Mini tracker scale (60-160%) in Settings or `/gg mini scale 60-160`; its top-left corner stays put.
