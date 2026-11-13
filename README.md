@@ -68,6 +68,10 @@ its sources came from. If the new version changed sources for any of our items (
 removed), a release is made automatically, with "Item sources updated from QuestieDB <version>" in
 the changelog. A Questie update that doesn't touch our items releases nothing.
 
+**Vendor prices:** add `--cmangos path/to/ClassicDB_*.sql.gz` (from github.com/cmangos/classic-db,
+`Full_DB/`) to set a default gold price on every item that has a vendor source. Later releases
+keep those prices without the flag.
+
 ### Blizzard Developer API terms (only if you use update_db.py)
 - **30-day data lifetime.** API data may be kept at most 30 days. The updater deletes cached
   responses older than that, and the addon ignores an API-built `Data.lua` older than 30 days.
@@ -107,3 +111,7 @@ Item sources (NPC drops, chests, vendors, quest rewards) are imported at build t
 [Questie](https://github.com/Questie/Questie) project's Forever database (QuestieDB, GPL-3.0;
 data by Muehe, TheCrux (BreakBB), Drejjmit, Dyaxler, Cheeq, TechnoHunter, Yttrium and contributors).
 GearGuide doesn't use Questie's code and doesn't need Questie installed.
+
+Default vendor gold prices are imported at build time from the
+[cmangos classic-db](https://github.com/cmangos/classic-db) world database (GPL-3.0). Prices seen
+at a vendor in game replace them, since WoW: Forever may have changed a price.

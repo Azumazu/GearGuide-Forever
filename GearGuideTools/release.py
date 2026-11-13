@@ -120,6 +120,7 @@ def main() -> int:
     p.add_argument("--corrections", type=Path, default=CORRECTIONS)
     p.add_argument("--questie", type=Path, help="QuestieDB folder for item sources (default: the one in --wow)")
     p.add_argument("--no-questie", action="store_true")
+    p.add_argument("--cmangos", type=Path, help="cmangos classic-db dump (.sql or .sql.gz) for vendor gold prices")
     p.add_argument("--keep-poor", action="store_true", help="keep gray (poor quality) items")
     p.add_argument("--sources", action="store_true", help="release even if only new sources were learned")
     p.add_argument("--force", action="store_true", help="release even if the scan is unfinished or nothing changed")
@@ -154,7 +155,9 @@ def main() -> int:
             meta["questie"] = questie_version(questie)
             meta["credits"] = "Item sources include data from the Questie project's database (GPL-3.0)"
         apply_corrections(base, args.corrections)
-        hidden = hide_by_source(base, args.corrections)
+        # Items hidden earlier are already gone from the shipped base, so keep the shipped list too:
+        # it is what hides them again when a player's own scan still has them.
+        hidden = sorted(set(hide_by_source(base, args.corrections)) | set(old_meta.get("hidden") or []))
         if hidden:
             print(f"Hidden by source (_hide_sources): {len(hidden)} items")
             meta["hidden"] = hidden
@@ -168,6 +171,21 @@ def main() -> int:
         old_vp = (old.get(iid) or {}).get("vp")
         if isinstance(old_vp, dict) and old_vp:
             rec["vp"] = {**old_vp, **(rec.get("vp") or {})}
+    # Default vendor gold prices (item.bp): from a cmangos classic-db dump when given, else kept from
+    # the shipped Data.lua for items that still have a vendor source.
+    if args.cmangos:
+        from import_cmangos import CREDITS as CM_CREDITS, buy_prices, merge_prices
+        priced = merge_prices(items, buy_prices(args.cmangos))
+        print(f"cmangos vendor prices: {priced} items")
+        meta["credits"] = "; ".join(c for c in (meta.get("credits"), CM_CREDITS) if c)
+    else:
+        for iid, rec in items.items():
+            old_bp = (old.get(iid) or {}).get("bp")
+            if old_bp and any(isinstance(s, dict) and s.get("t") == "vendor" for s in rec.get("src") or []):
+                rec["bp"] = old_bp
+        if any(r.get("bp") for r in items.values()):
+            from import_cmangos import CREDITS as CM_CREDITS
+            meta["credits"] = "; ".join(c for c in (meta.get("credits"), CM_CREDITS) if c)
     if scan.get("phase") != "done" and not args.force:
         print(f"The scan isn't finished (phase: {scan.get('phase') or 'not started'}). Let /gg scan complete, "
               "then /reload or log out so WoW saves it. (--force overrides.)", file=sys.stderr)
@@ -177,12 +195,13 @@ def main() -> int:
         return 1
 
     added, removed, changed, new_sources, sources_changed = diff(old, items)
+    new_prices = sum(1 for i, r in items.items() if r.get("bp") and r.get("bp") != (old.get(i) or {}).get("bp"))
     questie_before, questie_now = old_meta.get("questie"), meta.get("questie")
     questie_updated = bool(questie_now) and questie_before != questie_now
     print(f"Shipped database: {len(old)} items (client build {old_meta.get('build', '?')})")
     print(f"New scan:         {len(items)} items (client build {meta['build']})")
     print(f"  added {len(added)}, removed {len(removed)}, changed {len(changed)}, new sources {new_sources}, "
-          f"items with changed sources {len(sources_changed)}")
+          f"items with changed sources {len(sources_changed)}, new/changed vendor prices {new_prices}")
     if questie_updated:
         print(f"  QuestieDB updated: {questie_before or 'none'} -> {questie_now}")
     for iid, fields in changed[:SHOW_NAMES]:
@@ -190,7 +209,7 @@ def main() -> int:
 
     item_changes = bool(added or removed or changed)
     questie_release = questie_updated and bool(sources_changed or new_sources)
-    if not item_changes and not questie_release and not (args.sources and new_sources) and not args.force:
+    if not item_changes and not questie_release and not new_prices and not (args.sources and new_sources) and not args.force:
         print("No confirmed item changes and no QuestieDB source changes: nothing to release. "
               "(--sources releases newly learned sources.)")
         return 0
@@ -226,6 +245,8 @@ def main() -> int:
             lines.append(f"- Item sources updated from QuestieDB {questie_now} ({len(sources_changed)} items changed)")
         if new_sources:
             lines.append(f"- {new_sources} new item sources")
+        if new_prices:
+            lines.append(f"- Vendor prices for {new_prices} items (cmangos classic-db; prices seen in game take priority)")
     entry = "\n".join(lines) + "\n\n"
     previous = CHANGELOG.read_text(encoding="utf-8") if CHANGELOG.exists() else "# Changelog\n\n"
     head, _, rest = previous.partition("\n\n")

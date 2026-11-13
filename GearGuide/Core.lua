@@ -232,7 +232,11 @@ function ns:GetVendorPrice(id, vendor)
     local learned = GearGuideLearned.prices and GearGuideLearned.prices[id]
     if learned and learned[vendor] then return learned[vendor] end
     local dbItem = GearGuide_Data.items[id]
-    return dbItem and dbItem.vp and dbItem.vp[vendor] or nil
+    if not dbItem then return nil end
+    if dbItem.vp and dbItem.vp[vendor] then return dbItem.vp[vendor] end
+    -- Default gold price (item.bp, from the build's vendor database): the same at every vendor.
+    if dbItem.bp and dbItem.bp > 0 then return { g = dbItem.bp } end
+    return nil
 end
 
 -- "1g 25s" (coin icons where the client has them) + " + 2 Mark of Honor" for each extra cost.

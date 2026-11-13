@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0 (2026-11-13)
+
+Item sources refreshed (11227 gear items, client build 70888).
+- Vendor prices for 926 items (cmangos classic-db; prices seen in game take priority)
+
 ## 0.5.1 (2026-11-13)
 
 Item sources refreshed (11227 gear items, client build 70888).
