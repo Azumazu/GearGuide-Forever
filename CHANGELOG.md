@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0 (2026-11-13)
+
+- Mini tracker background opacity: new header button (click: more transparent, right-click: less,
+  mouse wheel: 5% steps) or `/gg mini opacity 0-100`. Text and icons stay fully visible; saved
+  between sessions.
+
 ## 0.8.1 (2026-11-13)
 
 - Honor vendor prices: PvP rank gear no longer shows the old vanilla gold price (WoW: Forever sells it

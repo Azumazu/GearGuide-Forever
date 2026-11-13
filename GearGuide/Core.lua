@@ -14,7 +14,7 @@ local defaults = {
     showUnknown = false,  -- list items nobody knows a source for (favorites always show)
     window = { w = 760, h = 480 },
     -- autoPopup: open the mini tracker when entering a zone/instance with recommended items
-    mini = { shown = false, count = 10, hideCompleted = false, autoPopup = true },
+    mini = { shown = false, count = 10, hideCompleted = false, autoPopup = true, opacity = 1 },
 }
 
 local function applyDefaults(dst, src)
@@ -708,6 +708,14 @@ SlashCmdList.GEARGUIDE = function(msg)
             local on = (arg == "on") or (arg ~= "off" and not GearGuideDB.mini.autoPopup)
             ns:SetMiniAutoPopup(on)
             ns.Print("Mini tracker auto-popup in zones with recommended items: " .. (on and "on" or "off"))
+        elseif sub == "opacity" or sub == "alpha" then
+            local pct = tonumber(arg)
+            if pct then
+                ns:SetMiniOpacity(pct / 100)
+                ns.Print(string.format("Mini tracker background opacity: %d%%", math.floor(GearGuideDB.mini.opacity * 100 + 0.5)))
+            else
+                ns.Print("Usage: /gg mini opacity 0-100 (current: " .. math.floor((GearGuideDB.mini.opacity or 1) * 100 + 0.5) .. "%)")
+            end
         else
             ns:ToggleMini()
         end
@@ -773,7 +781,7 @@ SlashCmdList.GEARGUIDE = function(msg)
         ns:InvalidateItems()
         ns.Print("Forgot all items and sources learned in game.")
     else
-        ns.Print("Commands: /gg (toggle window), /gg browse, /gg rec, /gg mini [count], /gg minimap, "
+        ns.Print("Commands: /gg (toggle window), /gg browse, /gg rec, /gg mini [count|auto|opacity 0-100], /gg minimap, "
             .. "/gg spec [name], /gg range <below> <above>, /gg sharing [on|off], /gg unknown [on|off], /gg ej, /gg scan [pause|status|reset|full|extend], /gg status, /gg unmark, /gg forget")
     end
 end

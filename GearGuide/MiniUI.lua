@@ -4,7 +4,7 @@ local _, ns = ...
 -- In a zone/instance where recommended items can be obtained it switches to a zone view
 -- ("In <zone>": those items and where they come from), and can pop up on its own there.
 -- Public: ns:ShowMini(), ns:HideMini(), ns:ToggleMini(), ns:SetMiniCount(n), ns:RefreshMini(),
---         ns:SetMiniAutoPopup(on)
+--         ns:SetMiniAutoPopup(on), ns:SetMiniOpacity(0..1)
 
 local WIDTH = 300     -- room for the zone view's source column and the header buttons
 local HEADER_H = 28   -- fits the 20px header buttons with 4px margins
@@ -15,6 +15,9 @@ local PAD = 4
 local MAX_ROWS = 20   -- visible rows (the +/- count sets the window height)
 local LIST_MAX = 60   -- items fetched; the mouse wheel scrolls through those beyond the visible rows
 local FONT_SIZE = 11
+-- Background opacity: click the header button to step down (right-click: up), wheel over it for 5%.
+-- Only the backdrop, frame edge, header band and row stripes fade; text and icons stay readable.
+local OPACITY_STEPS = { 1, 0.85, 0.7, 0.55, 0.4, 0.25, 0 }
 
 local READY = "Interface\\RaidFrame\\ReadyCheck-Ready"
 local MAP_ICON = "Interface\\Icons\\INV_Misc_Map_01"  -- item icon: present on every client
@@ -126,6 +129,7 @@ local function createRow(parent, index)
     row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -PAD, -(HEADER_H + PAD + (index - 1) * PITCH))
     row:RegisterForClicks("LeftButtonUp")
     ns.Skin:BarRow(row, ROW_H)   -- quality bar, full-height icon, dark gradient, hover
+    if row.barBg then row.barBg:SetAlpha(tonumber(GearGuideDB.mini.opacity) or 1) end  -- background opacity
 
     -- Right side: [slot] [mark] [+delta]
     row.delta = ns.Skin:Text(row, FONT_SIZE, "upgrade")
@@ -236,6 +240,32 @@ end)
 ---------------------------------------------------------------------------
 -- Frame
 ---------------------------------------------------------------------------
+local function opacity()
+    local o = tonumber(GearGuideDB.mini.opacity)
+    if not o then return 1 end
+    return math.max(0, math.min(1, o))
+end
+
+local function applyOpacity()
+    local o = opacity()
+    if frame.SetBackdropColor then
+        local r, g, b, a = color("bg")
+        frame:SetBackdropColor(r, g, b, a * o)
+        r, g, b, a = color("edge")
+        frame:SetBackdropBorderColor(r, g, b, a * o)
+    elseif frame.ggFlat then
+        for _, t in pairs(frame.ggFlat) do t:SetAlpha(o) end
+    end
+    for _, t in ipairs(frame.vignette or {}) do t:SetAlpha(o) end
+    frame.headerBg:SetAlpha(o)
+    frame.track:SetAlpha(o)
+    for _, row in ipairs(rows) do
+        if row.barBg then row.barBg:SetAlpha(o) end
+    end
+    -- the button's icon: right half shows the current opacity
+    frame.opacityBtn.fill:SetAlpha(0.15 + 0.85 * o)
+end
+
 local function updateHeader()
     local db = GearGuideDB.mini
     frame.countText:SetText(tostring(db.count))
@@ -246,6 +276,7 @@ local function updateHeader()
     frame.autoBtn:SetActive(on)
     if frame.autoBtn.icon.SetDesaturated then frame.autoBtn.icon:SetDesaturated(not on) end
     frame.autoBtn.icon:SetAlpha(on and 1 or 0.35)
+    applyOpacity()
 end
 
 local function createFrame()
@@ -277,6 +308,7 @@ local function createFrame()
     local headerBg = header:CreateTexture(nil, "BACKGROUND")
     headerBg:SetAllPoints()
     headerBg:SetColorTexture(color("header"))
+    f.headerBg = headerBg
 
     local title = ns.Skin:Text(header, 12, "accent")
     title:SetPoint("LEFT", header, "LEFT", 8, 0)
@@ -328,8 +360,47 @@ local function createFrame()
     end)
     f.autoBtn = auto
 
+    -- Background opacity: a small square, left half solid, right half at the current opacity.
+    local op = ns.Skin:IconButton(header, "", BTN)
+    op:SetPoint("RIGHT", auto, "LEFT", -4, 0)
+    local S = BTN - 10
+    local solid = op:CreateTexture(nil, "OVERLAY")
+    solid:SetSize(S / 2, S)
+    solid:SetPoint("CENTER", -S / 4, 0)
+    solid:SetColorTexture(color("accent"))
+    local fill = op:CreateTexture(nil, "OVERLAY")
+    fill:SetSize(S / 2, S)
+    fill:SetPoint("CENTER", S / 4, 0)
+    fill:SetColorTexture(color("accent"))
+    op.fill = fill
+    op:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    op:SetScript("OnClick", function(_, button)
+        local o, n = opacity(), #OPACITY_STEPS
+        if button == "RightButton" then  -- next step up (more opaque), wrapping to the lowest
+            for i = n, 1, -1 do
+                if OPACITY_STEPS[i] > o + 0.001 then ns:SetMiniOpacity(OPACITY_STEPS[i]) return end
+            end
+            ns:SetMiniOpacity(OPACITY_STEPS[n])
+        else                             -- next step down (more transparent), wrapping to full
+            for i = 1, n do
+                if OPACITY_STEPS[i] < o - 0.001 then ns:SetMiniOpacity(OPACITY_STEPS[i]) return end
+            end
+            ns:SetMiniOpacity(OPACITY_STEPS[1])
+        end
+    end)
+    op:EnableMouseWheel(true)
+    op:SetScript("OnMouseWheel", function(self, delta)
+        ns:SetMiniOpacity(opacity() + delta * 0.05)
+        if self:IsMouseOver() and self:GetScript("OnEnter") then self:GetScript("OnEnter")(self) end
+    end)
+    addTooltip(op, "Background opacity", function()
+        return string.format("%d%%. Click: more transparent, right-click: less. Mouse wheel: 5%% steps. "
+            .. "Text and icons always stay visible. Also: /gg mini opacity 0-100", math.floor(opacity() * 100 + 0.5))
+    end)
+    f.opacityBtn = op
+
     local plus = ns.Skin:IconButton(header, "+", BTN)
-    plus:SetPoint("RIGHT", auto, "LEFT", -8, 0)
+    plus:SetPoint("RIGHT", op, "LEFT", -8, 0)
     plus:SetScript("OnClick", function() ns:SetMiniCount(GearGuideDB.mini.count + 1) end)
     addTooltip(plus, "Show more rows", function() return "Scroll with the mouse wheel to see the rest of the list." end)
     f.plus = plus
@@ -579,6 +650,12 @@ local function scheduleZoneCheck(delay)
         zoneTimer = nil
         ns:CheckMiniZone()
     end)
+end
+
+function ns:SetMiniOpacity(o)
+    o = math.max(0, math.min(1, tonumber(o) or 1))
+    GearGuideDB.mini.opacity = math.floor(o * 100 + 0.5) / 100
+    if frame then applyOpacity() end
 end
 
 function ns:SetMiniAutoPopup(on)
