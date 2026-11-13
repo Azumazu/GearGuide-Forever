@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1 (2026-11-13)
+
+Item sources refreshed (11227 gear items, client build 70888).
+- Item sources updated from QuestieDB 1.0.16 (2023-11-14, a444a64) (1354 items changed)
+- 3373 new item sources
+
 ## 0.5.0 (2026-11-12)
 
 - Vendor prices: "Where to get it" shows what a vendor charges for an item, in gold and every
