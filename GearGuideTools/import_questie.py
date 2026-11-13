@@ -202,7 +202,8 @@ def find_toc(path: Path) -> Path:
 
 # ----------------------------------------------------------------------------- zones and map locations
 NPC_SPAWNS, OBJECT_SPAWNS, QUEST_STARTED_BY = 7, 4, 2
-NPC_WAYPOINTS = 8
+NPC_WAYPOINTS, NPC_RANK = 8, 6
+RARE_RANKS = {2, 4}      # rare elite, rare
 MIN_ROUTE_LENGTH = 2.0   # map units (0-100); shorter "routes" are an NPC pacing inside its shop
 ROUTE_STEP = 0.4         # points closer than this to the previous kept point are dropped
 MAX_ROUTE_POINTS = 80    # per path, after thinning
@@ -412,10 +413,11 @@ def _npc_source(store, zones, kind, nid):
     if not name:
         return None
     loc = location(zones, store.field("Npc", nid, NPC_SPAWNS))
-    if kind == "vendor":  # roaming vendors: their walking route, drawn as a line on the map
+    rare = kind == "drop" and store.field("Npc", nid, NPC_RANK) in RARE_RANKS
+    if kind == "vendor" or rare:  # roaming vendors and patrolling rares: their route, drawn on the map
         loc = add_routes(loc, routes(zones, store.field("Npc", nid, NPC_WAYPOINTS)))
     return {"t": kind, "n": name, "z": store.field("Npc", nid, NPC_ZONE) or None,
-            "loc": loc,
+            "loc": loc, "k": "rare" if rare else None,
             "f": npc_faction(store, nid) if kind == "vendor" else None}
 
 

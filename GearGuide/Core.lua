@@ -304,6 +304,7 @@ function ns.FormatSource(s)
     if s.price then text = text .. " |cffffffff- " .. ns.FormatPrice(s.price) .. "|r" end
     if s.shared then text = text .. " |cff888888(shared by players)|r" end
     if s.k == "guess" then text = text .. " |cff888888(likely)|r" end
+    if s.k == "rare" then text = text .. " |cffc0c0c0(rare)|r" end
     return text
 end
 
@@ -337,7 +338,10 @@ function ns:ShowSourceOnMap(s)
     local kind = entry.e and "entrance" or (s.k == "object" and "object") or s.t
     local sub = ns.FormatSource(s)
     if entry.e then sub = sub .. " - dungeon entrance" end
-    if #routes > 0 then sub = sub .. (#points > 0 and " - walks the marked route" or " - passes through here on the marked route") end
+    if #routes > 0 then
+        local who = s.k == "rare" and "patrols" or "walks"
+        sub = sub .. (#points > 0 and (" - " .. who .. " the marked route") or " - passes through here on the marked route")
+    end
     if #s.loc > 1 then sub = sub .. string.format("  (location %d of %d, click again for the next)", lastIndex, #s.loc) end
     self:ShowOnMap({ map = entry.m, points = points, routes = routes, title = s.n, sub = sub, kind = kind })
 end

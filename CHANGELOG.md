@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.0 (2026-11-13)
+
+- Patrolling rare mobs: their route is drawn on the world map like roaming vendors' (Ghost Howl,
+  Narillasanz, Mazzranache and about 50 more). Rare drops are marked "(rare)" in source lists.
+
 ## 0.7.0 (2026-11-13)
 
 - Roaming vendors: clicking a vendor that walks around (Antonio Perelli, Zixil, Lizzarik, ...) draws
