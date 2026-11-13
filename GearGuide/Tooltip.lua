@@ -37,10 +37,13 @@ local function anchorBeside(tip, owner, outer)
     local scale = outer:GetEffectiveScale() / UIParent:GetEffectiveScale()
     local cx = (outer:GetCenter() or 0) * scale
     local gap = 4
+    -- The distances are measured in the owner's units; the offset is in the tooltip's (they differ
+    -- when the owner is scaled, e.g. the mini tracker's scale setting).
+    local k = (owner:GetEffectiveScale() or 1) / (tip:GetEffectiveScale() or 1)
     if cx < UIParent:GetWidth() / 2 then
-        tip:SetPoint("TOPLEFT", owner, "TOPRIGHT", (outer:GetRight() or 0) - (owner:GetRight() or 0) + gap, 0)
+        tip:SetPoint("TOPLEFT", owner, "TOPRIGHT", ((outer:GetRight() or 0) - (owner:GetRight() or 0)) * k + gap, 0)
     else
-        tip:SetPoint("TOPRIGHT", owner, "TOPLEFT", (outer:GetLeft() or 0) - (owner:GetLeft() or 0) - gap, 0)
+        tip:SetPoint("TOPRIGHT", owner, "TOPLEFT", ((outer:GetLeft() or 0) - (owner:GetLeft() or 0)) * k - gap, 0)
     end
 end
 

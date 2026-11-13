@@ -216,9 +216,18 @@ function ns:CreateSettingsPanel(parent)
     panel.rows = stepper("Rows", function() return mini().count end,
         function(v) ns:SetMiniCount(v) end, 1, 20, 1, lv,
         "Visible rows. The mouse wheel scrolls through the rest of the list.")
+    panel.miniScale = stepper("Scale", function() return tonumber(mini().scale) or 1 end,
+        function(v) ns:SetMiniScale(v) end, 0.6, 1.6, 0.05, pct,
+        "Size of the whole tracker: text, icons and rows. Its top-left corner stays in place. "
+        .. "Also: /gg mini scale 60-160")
     panel.opacity = stepper("Background opacity", function() return tonumber(mini().opacity) or 1 end,
         function(v) ns:SetMiniOpacity(v) end, 0, 1, 0.05, pct,
         "Only the background fades; text and icons stay fully visible. Also: /gg mini opacity 0-100")
+    panel.hover = check("Hover mode",
+        function() return mini().hoverMode end,
+        function(on) ns:SetMiniHoverMode(on) end,
+        "Hides the tracker's header and background so only the item list shows. They come back while "
+        .. "the mouse is over the tracker or the main window is open. Also: /gg mini hover")
     panel.hideDone = check("Hide acquired items",
         function() return mini().hideCompleted end,
         function(on) mini().hideCompleted = on; ns:RefreshMini() end)

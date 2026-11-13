@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.0 (2026-11-13)
+
+- Mini tracker scale (60-160%) in Settings or `/gg mini scale 60-160`; its top-left corner stays put.
+- Mini tracker hover mode (Settings, the tracker's options menu, or `/gg mini hover`): the header and
+  background fade out so only the item list shows, and come back while the mouse is over the tracker,
+  its menu is open, or the main window is open.
+- Item tooltips beside a scaled mini tracker are placed correctly.
+
 ## 0.10.0 (2026-11-13)
 
 - New Settings tab in the main window (also `/gg settings`): minimap icon, source sharing, unknown

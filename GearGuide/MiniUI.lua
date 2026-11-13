@@ -4,7 +4,8 @@ local _, ns = ...
 -- In a zone/instance where recommended items can be obtained it switches to a zone view
 -- ("In <zone>": those items and where they come from), and can pop up on its own there.
 -- Public: ns:ShowMini(), ns:HideMini(), ns:ToggleMini(), ns:SetMiniCount(n), ns:RefreshMini(),
---         ns:SetMiniAutoPopup(on), ns:SetMiniOpacity(0..1)
+--         ns:SetMiniAutoPopup(on), ns:SetMiniOpacity(0..1), ns:SetMiniScale(0.6..1.6),
+--         ns:SetMiniHoverMode(on)
 
 local WIDTH = 300     -- room for the zone view's source column and the header buttons
 local HEADER_H = 28   -- fits the 20px header buttons with 4px margins
@@ -18,6 +19,11 @@ local FONT_SIZE = 11
 -- Background opacity (options menu or /gg mini opacity). Only the backdrop, frame edge, header band
 -- and row stripes fade; text and icons stay readable.
 local OPACITY_STEPS = { 1, 0.85, 0.7, 0.55, 0.4, 0.25, 0 }
+-- Hover mode: header and background fade out unless the mouse is over the tracker, its options
+-- menu is open, or the main window is open. Only the item rows stay.
+local FADE_PER_SEC = 6     -- full fade in about 0.17 s
+local HOVER_POLL = 0.05
+local chrome = 1           -- 0 = header/background hidden, 1 = shown; fades in between
 
 local SLOT_W, ZONE_SRC_W = 52, 104                   -- right-side dim column: slot / zone source
 
@@ -60,6 +66,11 @@ local function savePosition(f)
     local point, _, relPoint, x, y = f:GetPoint(1)
     local db = GearGuideDB.mini
     db.point, db.relPoint, db.x, db.y = point, relPoint, x, y
+end
+
+local MIN_SCALE, MAX_SCALE = 0.6, 1.6
+local function miniScale()
+    return math.max(MIN_SCALE, math.min(MAX_SCALE, tonumber(GearGuideDB.mini.scale) or 1))
 end
 
 local function restorePosition(f)
@@ -245,7 +256,7 @@ local function opacity()
 end
 
 local function applyOpacity()
-    local o = opacity()
+    local o = opacity() * chrome
     if frame.SetBackdropColor then
         local r, g, b, a = color("bg")
         frame:SetBackdropColor(r, g, b, a * o)
@@ -260,6 +271,31 @@ local function applyOpacity()
     for _, row in ipairs(rows) do
         if row.barBg then row.barBg:SetAlpha(o) end
     end
+    frame.header:SetAlpha(chrome)
+    frame.header:SetShown(chrome > 0)  -- hidden: its buttons can't be clicked by accident
+end
+
+local function chromeWanted()
+    if not GearGuideDB.mini.hoverMode then return true end
+    if rawget(frame, "dragging") then return true end
+    if frame.IsMouseOver and frame:IsMouseOver() then return true end
+    if frame.menuBtn and frame.menuBtn:IsOpen() then return true end
+    local main = rawget(_G, "GearGuideFrame")
+    return main ~= nil and main:IsShown() and true or false
+end
+
+-- Runs while the tracker is shown (OnUpdate), throttled: moves `chrome` toward its target.
+local hoverElapsed = 0
+local function updateChrome(dt)
+    hoverElapsed = hoverElapsed + (dt or 0)
+    local fading = chrome > 0 and chrome < 1
+    if not fading and hoverElapsed < HOVER_POLL then return end  -- idle: check ~20 times a second
+    local step = hoverElapsed * FADE_PER_SEC                       -- mid-fade: every frame
+    hoverElapsed = 0
+    local target = chromeWanted() and 1 or 0
+    if chrome == target then return end
+    if target > chrome then chrome = math.min(target, chrome + step) else chrome = math.max(target, chrome - step) end
+    applyOpacity()
 end
 
 local function updateHeader()
@@ -290,8 +326,9 @@ local function createFrame()
     header:SetHeight(HEADER_H)
     header:EnableMouse(true)
     header:RegisterForDrag("LeftButton")
-    header:SetScript("OnDragStart", function() f:StartMoving() end)
+    header:SetScript("OnDragStart", function() f.dragging = true; f:StartMoving() end)
     header:SetScript("OnDragStop", function()
+        f.dragging = false
         f:StopMovingOrSizing()
         savePosition(f)
     end)
@@ -373,6 +410,8 @@ local function createFrame()
     thumb:SetColorTexture(color("accent"))
     f.thumb = thumb
 
+    f:SetScript("OnUpdate", function(_, dt) updateChrome(dt) end)
+    f:SetScale(miniScale())  -- before positioning: the saved offsets are in the frame's scaled units
     restorePosition(f)
     return f
 end
@@ -590,6 +629,7 @@ function ns:MiniMenuItems()
         { value = "settings", text = "All settings..." },
         { value = "done", text = "Hide acquired items", checked = db.hideCompleted and true or false, keepOpen = true },
         { value = "auto", text = "Auto-open in zones with upgrades", checked = db.autoPopup and true or false, keepOpen = true },
+        { value = "hover", text = "Hover mode (header and background on mouse-over)", checked = db.hoverMode and true or false, keepOpen = true },
         { value = "opacity", text = "Background opacity", header = true },
     }
     local cur, best = opacity(), nil
@@ -613,8 +653,35 @@ function ns:MiniMenuSelect(value)
         ns:RefreshMini()
     elseif value == "auto" then
         ns:SetMiniAutoPopup(not GearGuideDB.mini.autoPopup)
+    elseif value == "hover" then
+        ns:SetMiniHoverMode(not GearGuideDB.mini.hoverMode)
     elseif type(value) == "number" then
         ns:SetMiniOpacity(value)
+    end
+end
+
+function ns:SetMiniHoverMode(on)
+    GearGuideDB.mini.hoverMode = on and true or false
+    if not on then chrome = 1 end
+    if frame then
+        if on and not chromeWanted() then chrome = 0 end  -- turning it on away from the tracker: hide now
+        applyOpacity()
+    end
+end
+
+-- Scales the whole tracker (text, icons, rows). The top-left corner stays where it is on screen.
+function ns:SetMiniScale(s)
+    s = math.max(MIN_SCALE, math.min(MAX_SCALE, tonumber(s) or 1))
+    s = math.floor(s * 100 + 0.5) / 100
+    GearGuideDB.mini.scale = s
+    if not frame then return end
+    local old = frame:GetScale() or 1
+    local left, top = frame:GetLeft(), frame:GetTop()
+    frame:SetScale(s)
+    if left and top and old ~= s then
+        frame:ClearAllPoints()
+        frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left * old / s, top * old / s)
+        savePosition(frame)
     end
 end
 

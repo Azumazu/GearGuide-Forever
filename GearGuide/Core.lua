@@ -14,7 +14,8 @@ local defaults = {
     showUnknown = false,  -- list items nobody knows a source for (favorites always show)
     window = { w = 760, h = 480, scale = 1 },
     -- autoPopup: open the mini tracker when entering a zone/instance with recommended items
-    mini = { shown = false, count = 10, hideCompleted = false, autoPopup = true, opacity = 1, pvpHide = true },
+    mini = { shown = false, count = 10, hideCompleted = false, autoPopup = true, opacity = 1, pvpHide = true, scale = 1,
+             hoverMode = false },
     minQuality = 2,   -- lowest item quality recommended (2 = Uncommon)
     map = { routes = true, waypoint = true },  -- draw patrol routes; set a waypoint arrow (game / TomTom)
 }
@@ -712,6 +713,14 @@ SlashCmdList.GEARGUIDE = function(msg)
             local on = (arg == "on") or (arg ~= "off" and not GearGuideDB.mini.autoPopup)
             ns:SetMiniAutoPopup(on)
             ns.Print("Mini tracker auto-popup in zones with recommended items: " .. (on and "on" or "off"))
+        elseif sub == "hover" then
+            local on = (arg == "on") or (arg ~= "off" and not GearGuideDB.mini.hoverMode)
+            ns:SetMiniHoverMode(on)
+            ns.Print("Mini tracker hover mode: " .. (on and "on (header and background show on mouse-over)" or "off"))
+        elseif sub == "scale" then
+            local pct = tonumber(arg)
+            if pct then ns:SetMiniScale(pct / 100) end
+            ns.Print(string.format("Mini tracker scale: %d%% (/gg mini scale 60-160)", math.floor((GearGuideDB.mini.scale or 1) * 100 + 0.5)))
         elseif sub == "opacity" or sub == "alpha" then
             local pct = tonumber(arg)
             if pct then
@@ -785,7 +794,7 @@ SlashCmdList.GEARGUIDE = function(msg)
         ns:InvalidateItems()
         ns.Print("Forgot all items and sources learned in game.")
     else
-        ns.Print("Commands: /gg (toggle window), /gg browse, /gg rec, /gg settings, /gg mini [count|auto|opacity 0-100], /gg minimap, "
+        ns.Print("Commands: /gg (toggle window), /gg browse, /gg rec, /gg settings, /gg mini [count|auto|hover|opacity 0-100|scale 60-160], /gg minimap, "
             .. "/gg spec [name], /gg range <below> <above>, /gg sharing [on|off], /gg unknown [on|off], /gg ej, /gg scan [pause|status|reset|full|extend], /gg status, /gg unmark, /gg forget")
     end
 end
