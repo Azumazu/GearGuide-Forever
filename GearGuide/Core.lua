@@ -328,11 +328,18 @@ function ns:ShowSourceOnMap(s)
     for i = 1, #(entry.p or {}) - 1, 2 do
         points[#points + 1] = { x = entry.p[i] / 100, y = entry.p[i + 1] / 100 }
     end
+    local routes = {}
+    for _, r in ipairs(entry.r or {}) do
+        local route = {}
+        for i = 1, #r - 1, 2 do route[#route + 1] = { x = r[i] / 100, y = r[i + 1] / 100 } end
+        if #route > 1 then routes[#routes + 1] = route end
+    end
     local kind = entry.e and "entrance" or (s.k == "object" and "object") or s.t
     local sub = ns.FormatSource(s)
     if entry.e then sub = sub .. " - dungeon entrance" end
+    if #routes > 0 then sub = sub .. (#points > 0 and " - walks the marked route" or " - passes through here on the marked route") end
     if #s.loc > 1 then sub = sub .. string.format("  (location %d of %d, click again for the next)", lastIndex, #s.loc) end
-    self:ShowOnMap({ map = entry.m, points = points, title = s.n, sub = sub, kind = kind })
+    self:ShowOnMap({ map = entry.m, points = points, routes = routes, title = s.n, sub = sub, kind = kind })
 end
 
 function ns:SourceSummary(id)

@@ -17,7 +17,12 @@ local ICONS = {
     entrance = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_6",   -- square (doorway)
 }
 
-local pins, active = {}, nil   -- active = { map = uiMapID, points = {...}, title, kind, sub }
+local MAX_SEGMENTS = 400
+local LINE_WIDTH = 3
+local LINE_COLOR = { 0.86, 0.65, 0.5, 0.85 }  -- skin accent
+
+local pins, active = {}, nil   -- active = { map = uiMapID, points = {...}, routes = {...}, title, kind, sub }
+local lines = {}
 local watcher
 
 local function canvas()
@@ -62,8 +67,45 @@ local function getPin(i, parent)
     return pin
 end
 
+local function hideLines(from)
+    for i = from or 1, #lines do lines[i]:Hide() end
+end
+
 local function hideAll()
     for _, pin in ipairs(pins) do pin:Hide() end
+    hideLines()
+end
+
+-- One straight piece of a walking route. Lines need Frame:CreateLine (modern clients); without it
+-- the route simply isn't drawn and the pins still show.
+local function getLine(i, parent)
+    local line = lines[i]
+    if not line then
+        if not parent.CreateLine then return nil end
+        line = parent:CreateLine(nil, "ARTWORK")
+        line:SetColorTexture(LINE_COLOR[1], LINE_COLOR[2], LINE_COLOR[3], LINE_COLOR[4])
+        lines[i] = line
+    end
+    return line
+end
+
+local function drawRoutes(c, w, h)
+    local n = 0
+    local thickness = LINE_WIDTH / canvasScale()  -- same on-screen width at every zoom level
+    for _, route in ipairs(active.routes or {}) do
+        for i = 1, #route - 1 do
+            if n >= MAX_SEGMENTS then break end
+            local a, b = route[i], route[i + 1]
+            local line = getLine(n + 1, c)
+            if not line then return end
+            n = n + 1
+            line:SetThickness(thickness)
+            line:SetStartPoint("TOPLEFT", c, a.x * w, -a.y * h)
+            line:SetEndPoint("TOPLEFT", c, b.x * w, -b.y * h)
+            line:Show()
+        end
+    end
+    hideLines(n + 1)
 end
 
 -- Places pins when the displayed map is the one we want; called on a light timer while the map is open.
@@ -75,6 +117,7 @@ local function refreshPins()
     local w, h = c:GetWidth(), c:GetHeight()
     local scale = 1 / canvasScale()  -- keep pins the same size when zooming
     local icon = ICONS[active.kind] or ICONS.drop
+    drawRoutes(c, w, h)
     for i, p in ipairs(active.points) do
         if i > MAX_PINS then break end
         local pin = getPin(i, c)
@@ -138,9 +181,11 @@ function ns.MapIconFor(source)
 end
 
 -- loc = { map = uiMapID, points = { {x = 0..1, y = 0..1}, ... }, title = "Old Serra'kis",
---         sub = "Drop · Blackfathom Deeps (entrance)", kind = "drop"|"boss"|"vendor"|"quest"|"object"|"entrance" }
+--         sub = "Drop · Blackfathom Deeps (entrance)", kind = "drop"|"boss"|"vendor"|"quest"|"object"|"entrance",
+--         routes = { { {x, y}, {x, y}, ... }, ... } (optional: a roaming NPC's walking paths) }
 function ns:ShowOnMap(loc)
-    if not loc or not loc.map or not loc.points or #loc.points == 0 then
+    local hasRoute = loc and loc.routes and loc.routes[1] and loc.routes[1][1]
+    if not loc or not loc.map or not loc.points or (#loc.points == 0 and not hasRoute) then
         ns.Print("No map location is known for this source yet.")
         return false
     end
@@ -151,7 +196,7 @@ function ns:ShowOnMap(loc)
     active = loc
     openMap(loc.map)
     startWatcher()
-    setWaypoint(loc.map, loc.points[1], loc.title)
+    setWaypoint(loc.map, loc.points[1] or loc.routes[1][1], loc.title)
     refreshPins()
     return true
 end

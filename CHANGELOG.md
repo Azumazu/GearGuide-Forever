@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.0 (2026-11-13)
+
+- Roaming vendors: clicking a vendor that walks around (Antonio Perelli, Zixil, Lizzarik, ...) draws
+  its route on the world map. Routes that cross zones show on each zone's map (click again for the next).
+
 ## 0.6.0 (2026-11-13)
 
 Item sources refreshed (11227 gear items, client build 70888).

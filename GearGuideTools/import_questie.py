@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import math
 import re
 import struct
 import sys
@@ -201,6 +202,10 @@ def find_toc(path: Path) -> Path:
 
 # ----------------------------------------------------------------------------- zones and map locations
 NPC_SPAWNS, OBJECT_SPAWNS, QUEST_STARTED_BY = 7, 4, 2
+NPC_WAYPOINTS = 8
+MIN_ROUTE_LENGTH = 2.0   # map units (0-100); shorter "routes" are an NPC pacing inside its shop
+ROUTE_STEP = 0.4         # points closer than this to the previous kept point are dropped
+MAX_ROUTE_POINTS = 80    # per path, after thinning
 MAX_POINTS = 20          # spawn points kept per map
 MAX_LOC_MAPS = 3         # maps kept per location (most spawns first)
 MAX_DROP_NPCS = 25       # creatures listed per item before "... and N more"
@@ -311,6 +316,57 @@ def location(zones: ZoneData, spawns) -> list[dict] | None:
     return out
 
 
+def _as_list(v):
+    return list(v.values()) if isinstance(v, dict) else v if isinstance(v, list) else []
+
+
+def routes(zones: ZoneData, waypoints) -> dict[int, list[list[float]]]:
+    """Questie waypoints {area: [[[x, y], ...], ...]} -> {uiMapID: [[x1, y1, x2, y2, ...], ...]} for
+    paths long enough to be worth drawing, thinned to a few dozen points each."""
+    if isinstance(waypoints, list):
+        waypoints = {i + 1: v for i, v in enumerate(waypoints)}
+    if not isinstance(waypoints, dict):
+        return {}
+    out: dict[int, list] = {}
+    for area, paths in waypoints.items():
+        m = zones.map_for(area) if isinstance(area, int) else None
+        if not m:
+            continue
+        for path in _as_list(paths):
+            pts = []
+            for p in _as_list(path):
+                xy = _as_list(p)
+                if len(xy) >= 2 and all(isinstance(c, (int, float)) and 0 <= c <= 100 for c in xy[:2]):
+                    pts.append((float(xy[0]), float(xy[1])))
+            if len(pts) < 2 or sum(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1)) < MIN_ROUTE_LENGTH:
+                continue
+            kept = [pts[0]]
+            for pt in pts[1:]:
+                if math.dist(pt, kept[-1]) >= ROUTE_STEP:
+                    kept.append(pt)
+            if kept[-1] != pts[-1]:
+                kept.append(pts[-1])  # keep the true end, so loops close
+            if len(kept) > MAX_ROUTE_POINTS:
+                kept = _sample(kept[:-1], MAX_ROUTE_POINTS - 1) + [kept[-1]]
+            out.setdefault(m, []).append([round(c, 1) for xy in kept for c in xy])
+    return out
+
+
+def add_routes(loc: list | None, by_map: dict[int, list]) -> list | None:
+    """Attaches routes (entry["r"]) to the location's map entries; maps the NPC only walks through
+    get an entry of their own with no spawn points."""
+    if not by_map:
+        return loc
+    loc = list(loc or [])
+    for m, paths in by_map.items():
+        entry = next((e for e in loc if e.get("m") == m and not e.get("e")), None)
+        if entry is None:
+            entry = {"m": m, "p": []}
+            loc.append(entry)
+        entry["r"] = paths
+    return loc
+
+
 def merge_locations(locs: list) -> list | None:
     """Combines several locations (e.g. every 'Solid Chest' object) into one, same limits."""
     by_map: dict[tuple, list] = {}
@@ -355,8 +411,11 @@ def _npc_source(store, zones, kind, nid):
     name = store.name("Npc", nid)
     if not name:
         return None
+    loc = location(zones, store.field("Npc", nid, NPC_SPAWNS))
+    if kind == "vendor":  # roaming vendors: their walking route, drawn as a line on the map
+        loc = add_routes(loc, routes(zones, store.field("Npc", nid, NPC_WAYPOINTS)))
     return {"t": kind, "n": name, "z": store.field("Npc", nid, NPC_ZONE) or None,
-            "loc": location(zones, store.field("Npc", nid, NPC_SPAWNS)),
+            "loc": loc,
             "f": npc_faction(store, nid) if kind == "vendor" else None}
 
 
