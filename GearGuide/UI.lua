@@ -1163,7 +1163,12 @@ end
 -- Tabs
 ---------------------------------------------------------------------------
 local function applyTab(tab)
-    state.tab = (tab == "browser") and "browser" or "recommended"
+    state.tab = (tab == "browser" or tab == "settings") and tab or "recommended"
+    local settings = state.tab == "settings"
+    W.left:SetShown(not settings)
+    W.detail:SetShown(not settings)
+    W.settings:SetShown(settings)
+    W.settingsTab:SetActive(settings)
     local active = state.tab == "browser" and W.browseBar or W.recBar
     W.recBar:SetShown(state.tab == "recommended")
     W.browseBar:SetShown(state.tab == "browser")
@@ -1374,6 +1379,7 @@ local function createWindow()
         frame:SetPoint(db.point, UIParent, db.relPoint or db.point, db.x or 0, db.y or 0)
     end
     frame:Hide()
+    frame:SetScale(tonumber(db.scale) or 1)
     Skin:ResizeGrip(frame, MIN_W, MIN_H, MAX_W, MAX_H, saveSize)
 
     -- Header: title / dim subtitle (class · spec · level range) ........ Mini | Spec | x
@@ -1431,6 +1437,9 @@ local function createWindow()
     W.browseTab = Skin:Tab(strip, "Gear Browser", 30)
     W.browseTab:SetPoint("LEFT", W.recTab, "RIGHT", 6, 0)
     W.browseTab:SetScript("OnClick", function() setTab("browser") end)
+    W.settingsTab = Skin:Tab(strip, "Settings", 30)
+    W.settingsTab:SetPoint("LEFT", W.browseTab, "RIGHT", 6, 0)
+    W.settingsTab:SetScript("OnClick", function() setTab("settings") end)
 
     -- Footer
     -- Opt-out for in-game source sharing (Comm.lua)
@@ -1484,6 +1493,12 @@ local function createWindow()
     browseBar:SetPoint("TOPRIGHT", left, "TOPRIGHT")
 
     createListBox(left)
+
+    -- Settings tab: takes the place of the list and the detail panel.
+    W.settings = ns:CreateSettingsPanel(content)
+    W.settings:SetPoint("TOPLEFT", W.tabStrip, "BOTTOMLEFT", 0, -GAP)
+    W.settings:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, FOOTER_H + GAP)
+    W.settings:Hide()
 
     W.flashDriver = CreateFrame("Frame", nil, frame)
     W.flashDriver:Hide()
@@ -1550,6 +1565,11 @@ function ns:RefreshUI()
     end
     updateHeader()
     updateSubtitle()
+    if state.tab == "settings" then
+        W.settings:Refresh()
+        updateStatus()
+        return
+    end
     W.classSel:Refresh()
     W.specSel:Refresh()  -- follows the player's spec when browsing their own class
     local data
@@ -1572,7 +1592,7 @@ end
 
 function ns:ShowWindow(tab)
     createWindow()
-    applyTab(tab == "browser" and "browser" or "recommended")
+    applyTab(tab)
     if frame:IsShown() then
         self:RefreshUI()
     else

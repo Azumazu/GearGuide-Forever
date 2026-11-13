@@ -90,6 +90,7 @@ local function getLine(i, parent)
 end
 
 local function drawRoutes(c, w, h)
+    if GearGuideDB and GearGuideDB.map and GearGuideDB.map.routes == false then hideLines() return end
     local n = 0
     local thickness = LINE_WIDTH / canvasScale()  -- same on-screen width at every zoom level
     for _, route in ipairs(active.routes or {}) do
@@ -196,7 +197,9 @@ function ns:ShowOnMap(loc)
     active = loc
     openMap(loc.map)
     startWatcher()
-    setWaypoint(loc.map, loc.points[1] or loc.routes[1][1], loc.title)
+    if not (GearGuideDB and GearGuideDB.map and GearGuideDB.map.waypoint == false) then
+        setWaypoint(loc.map, loc.points[1] or loc.routes[1][1], loc.title)
+    end
     refreshPins()
     return true
 end

@@ -224,9 +224,10 @@ function ns:IsSuitable(item, weights, ctx, score)
     return statsOk, armorOk
 end
 
-local MIN_QUALITY = 2  -- Enum.ItemQuality.Uncommon
+local MIN_QUALITY = 2  -- Enum.ItemQuality.Uncommon (default; Settings: GearGuideDB.minQuality)
 
 function ns:BuildRecommendations()
+    local minQ = tonumber(GearGuideDB.minQuality) or MIN_QUALITY
     local weights, ctx = self:GetScoringContext()
     local level = ctx.level
     local minL = math.max(1, level - GearGuideDB.levelBehind)
@@ -240,7 +241,7 @@ function ns:BuildRecommendations()
         local eff = ns.EffectiveLevel(item)
         -- Uncommon (green) and better only: common/poor gear is vendor filler, not worth a slot
         -- in the list (favorites are added separately and still show).
-        if groups and (item.q or 1) >= MIN_QUALITY and eff >= minL and eff <= maxL
+        if groups and (item.q or 1) >= minQ and eff >= minL and eff <= maxL
             and self:ShowsItem(id) and self:IsUsable(item, ctx.class, level)
             and ns.WeaponTypeAllowed(item, ctx.class, ctx.spec, level) then
             local score = self:Score(item, weights, ctx)

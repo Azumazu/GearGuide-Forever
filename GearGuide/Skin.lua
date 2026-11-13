@@ -1135,7 +1135,9 @@ end
 --   prefix     = "Sort",              -- optional dim label shown before the value on the button
 --   tooltip    = { "Title", "line" }, -- optional hover tooltip for the button
 -- }
--- Item extras (optional): iconCoords {l,r,t,b} for atlas-style icons, note = dim right-aligned menu text.
+-- Item extras (optional): iconCoords {l,r,t,b} for atlas-style icons, note = dim right-aligned menu text,
+--   checked = true/false (marker shown from this instead of value == getValue(): toggles, menus),
+--   header = true (dim section label, not clickable), keepOpen = true (menu stays open on click).
 -- dd:Refresh() re-reads getValue/getItems for the label; dd:Open(), dd:Close(), dd:IsOpen().
 local DD_H, DD_ITEM_H, DD_PAD, DD_ICON, DD_MAX_W = 24, 22, 3, 14, 340
 local ddMenu   -- one shared menu: only one dropdown can be open at a time
@@ -1188,12 +1190,18 @@ local function fillMenu(m)
             b.text:ClearAllPoints()
             b.text:SetPoint("LEFT", b, "LEFT", m.hasIcons and (6 + DD_ICON + 5) or 8, 0)
             b.text:SetPoint("RIGHT", b.note, "LEFT", -6, 0)
-            local cur = (it.value == m.value)
-            b.sel:SetShown(cur)
-            b.bar:SetShown(cur)
+            local cur
+            if it.checked ~= nil then cur = it.checked and true or false else cur = (it.value == m.value) end
+            if it.header then cur = false end
+            b.sel:SetShown(cur and it.checked == nil)  -- toggles only get the marker, not the row tint
+            b.bar:SetShown(cur and it.checked == nil)
             b.mark:SetShown(cur)
-            if it.disabled then b:Disable() else b:Enable() end
-            setTextColor(b.text, it.disabled and "textDim" or "text", it.disabled and 0.6 or 1)
+            if it.disabled or it.header then b:Disable() else b:Enable() end
+            if it.header then
+                setTextColor(b.text, "accent", 0.9)
+            else
+                setTextColor(b.text, it.disabled and "textDim" or "text", it.disabled and 0.6 or 1)
+            end
             b.icon:SetAlpha(it.disabled and 0.4 or 1)
             b:Show()
         end
@@ -1236,10 +1244,19 @@ local function createMenuButton(m, i)
 
     b:SetScript("OnClick", function(self)
         local it, owner = self.item, m.owner
-        if not it or it.disabled or not owner then return end
+        if not it or it.disabled or it.header or not owner then return end
         local onSelect = owner.opts.onSelect
-        if onSelect then onSelect(it.value) end
-        if m:IsShown() and m.owner == owner then m:Hide() end
+        if onSelect then onSelect(it.value, it) end
+        if m:IsShown() and m.owner == owner then
+            if it.keepOpen then  -- re-read the items so toggles/markers show their new state
+                local o = owner.opts
+                m.items = (o.getItems and o.getItems()) or m.items
+                m.value = o.getValue and o.getValue()
+                fillMenu(m)
+            else
+                m:Hide()
+            end
+        end
         owner:Refresh()
     end)
     m.buttons[i] = b
@@ -1389,6 +1406,51 @@ local function makeArrow(parent)
         rows[i] = t
     end
     return rows
+end
+
+-- Skin:MenuButton(parent, glyph, size, opts) -> icon button that opens the shared menu with
+-- opts.getItems() (same item format as Dropdown; use checked/header/keepOpen) and calls
+-- opts.onSelect(value, item). opts.tooltip = { "Title", "line" } is shown while the menu is closed.
+function Skin:MenuButton(parent, glyph, size, opts)
+    local b = self:IconButton(parent, glyph, size)
+    b.opts = opts or {}
+    b.hovered = false
+    function b:IsOpen()
+        return ddMenu ~= nil and ddMenu:IsShown() and ddMenu.owner == self or false
+    end
+    function b:UpdateLook()
+        setBorder(self, (self:IsOpen() or self.hovered) and "accent" or "edge")
+    end
+    function b:Refresh()
+        if self:IsOpen() then
+            ddMenu.items = (self.opts.getItems and self.opts.getItems()) or ddMenu.items
+            fillMenu(ddMenu)
+        end
+        self:UpdateLook()
+    end
+    function b:Open() openMenu(self) end
+    function b:Close() if self:IsOpen() then ddMenu:Hide() end end
+    b:SetScript("OnClick", function(self)
+        if self:IsOpen() then self:Close() else openMenu(self) end
+    end)
+    b:HookScript("OnEnter", function(self)
+        self.hovered = true
+        self:UpdateLook()
+        local tip = self.opts.tooltip
+        if tip and not self:IsOpen() then
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:AddLine(tip[1] or "", 1, 1, 1)
+            if tip[2] then GameTooltip:AddLine(tip[2], 0.7, 0.7, 0.7, true) end
+            GameTooltip:Show()
+        end
+    end)
+    b:HookScript("OnLeave", function(self)
+        self.hovered = false
+        self:UpdateLook()
+        if GameTooltip:IsOwned(self) then GameTooltip:Hide() end
+    end)
+    b:HookScript("OnHide", function(self) self:Close() end)
+    return b
 end
 
 function Skin:Dropdown(parent, width, opts)

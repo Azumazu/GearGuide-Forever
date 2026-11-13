@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.0 (2026-11-13)
+
+- New Settings tab in the main window (also `/gg settings`): minimap icon, source sharing, unknown
+  sources, recommendation level range, lowest recommended quality, mini tracker (shown, rows, background
+  opacity, hide acquired, auto-open, hide in battlegrounds/arenas), main window scale, and world map
+  patrol routes and waypoint arrow.
+- Mini tracker header: the open-window, hide-acquired, auto-open and opacity buttons are now one
+  options menu, leaving more room for the zone name.
+
 ## 0.9.0 (2026-11-13)
 
 - Mini tracker background opacity: new header button (click: more transparent, right-click: less,

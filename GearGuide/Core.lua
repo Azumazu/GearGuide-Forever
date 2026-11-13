@@ -12,9 +12,11 @@ local defaults = {
     levelBehind = 5,  -- recommend items whose required level is up to this many levels below you
     levelAhead = 3,   -- ...and up to this many levels above you (things to aim for)
     showUnknown = false,  -- list items nobody knows a source for (favorites always show)
-    window = { w = 760, h = 480 },
+    window = { w = 760, h = 480, scale = 1 },
     -- autoPopup: open the mini tracker when entering a zone/instance with recommended items
-    mini = { shown = false, count = 10, hideCompleted = false, autoPopup = true, opacity = 1 },
+    mini = { shown = false, count = 10, hideCompleted = false, autoPopup = true, opacity = 1, pvpHide = true },
+    minQuality = 2,   -- lowest item quality recommended (2 = Uncommon)
+    map = { routes = true, waypoint = true },  -- draw patrol routes; set a waypoint arrow (game / TomTom)
 }
 
 local function applyDefaults(dst, src)
@@ -697,6 +699,8 @@ SlashCmdList.GEARGUIDE = function(msg)
         ns:AutoScanIfEmpty()
     elseif cmd == "browse" then
         ns:ShowWindow("browser")
+    elseif cmd == "settings" or cmd == "config" or cmd == "options" then
+        ns:ShowWindow("settings")
     elseif cmd == "rec" then
         ns:ShowWindow("recommended")
     elseif cmd == "mini" then
@@ -781,7 +785,7 @@ SlashCmdList.GEARGUIDE = function(msg)
         ns:InvalidateItems()
         ns.Print("Forgot all items and sources learned in game.")
     else
-        ns.Print("Commands: /gg (toggle window), /gg browse, /gg rec, /gg mini [count|auto|opacity 0-100], /gg minimap, "
+        ns.Print("Commands: /gg (toggle window), /gg browse, /gg rec, /gg settings, /gg mini [count|auto|opacity 0-100], /gg minimap, "
             .. "/gg spec [name], /gg range <below> <above>, /gg sharing [on|off], /gg unknown [on|off], /gg ej, /gg scan [pause|status|reset|full|extend], /gg status, /gg unmark, /gg forget")
     end
 end

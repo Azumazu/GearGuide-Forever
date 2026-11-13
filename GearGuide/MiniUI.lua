@@ -15,12 +15,10 @@ local PAD = 4
 local MAX_ROWS = 20   -- visible rows (the +/- count sets the window height)
 local LIST_MAX = 60   -- items fetched; the mouse wheel scrolls through those beyond the visible rows
 local FONT_SIZE = 11
--- Background opacity: click the header button to step down (right-click: up), wheel over it for 5%.
--- Only the backdrop, frame edge, header band and row stripes fade; text and icons stay readable.
+-- Background opacity (options menu or /gg mini opacity). Only the backdrop, frame edge, header band
+-- and row stripes fade; text and icons stay readable.
 local OPACITY_STEPS = { 1, 0.85, 0.7, 0.55, 0.4, 0.25, 0 }
 
-local READY = "Interface\\RaidFrame\\ReadyCheck-Ready"
-local MAP_ICON = "Interface\\Icons\\INV_Misc_Map_01"  -- item icon: present on every client
 local SLOT_W, ZONE_SRC_W = 52, 104                   -- right-side dim column: slot / zone source
 
 local frame          -- created lazily on first ShowMini
@@ -262,8 +260,6 @@ local function applyOpacity()
     for _, row in ipairs(rows) do
         if row.barBg then row.barBg:SetAlpha(o) end
     end
-    -- the button's icon: right half shows the current opacity
-    frame.opacityBtn.fill:SetAlpha(0.15 + 0.85 * o)
 end
 
 local function updateHeader()
@@ -271,12 +267,8 @@ local function updateHeader()
     frame.countText:SetText(tostring(db.count))
     if db.count <= 1 then frame.minus:Disable() else frame.minus:Enable() end
     if db.count >= MAX_ROWS then frame.plus:Disable() else frame.plus:Enable() end
-    frame.doneIcon:SetAlpha(db.hideCompleted and 1 or 0.3)
-    local on = db.autoPopup and true or false
-    frame.autoBtn:SetActive(on)
-    if frame.autoBtn.icon.SetDesaturated then frame.autoBtn.icon:SetDesaturated(not on) end
-    frame.autoBtn.icon:SetAlpha(on and 1 or 0.35)
     applyOpacity()
+    if frame.menuBtn then frame.menuBtn:Refresh() end
 end
 
 local function createFrame()
@@ -322,85 +314,23 @@ local function createFrame()
     close:SetScript("OnClick", function() ns:HideMini() end)
     addTooltip(close, "Close", function() return "Reopen with /gg mini or Shift-click the minimap icon." end)
 
-    local open = ns.Skin:IconButton(header, ">", BTN)
-    open:SetPoint("RIGHT", close, "LEFT", -4, 0)
-    open:SetScript("OnClick", function() ns:ToggleWindow() end)
-    addTooltip(open, "Open main window")
-
-    local done = ns.Skin:IconButton(header, "", BTN)
-    done:SetPoint("RIGHT", open, "LEFT", -4, 0)
-    local doneIcon = done:CreateTexture(nil, "OVERLAY")
-    doneIcon:SetTexture(READY)
-    doneIcon:SetSize(BTN - 4, BTN - 4)
-    doneIcon:SetPoint("CENTER")
-    f.doneIcon = doneIcon
-    done:SetScript("OnClick", function()
-        GearGuideDB.mini.hideCompleted = not GearGuideDB.mini.hideCompleted
-        ns:RefreshMini()
-    end)
-    addTooltip(done, "Hide acquired items", function()
-        return GearGuideDB.mini.hideCompleted and "On: acquired items are hidden." or "Off: acquired items are shown."
-    end)
-
-    -- Auto-popup in zones with recommended items (on: full-color map + accent bar).
-    local auto = ns.Skin:IconButton(header, "", BTN)
-    auto:SetPoint("RIGHT", done, "LEFT", -4, 0)
-    local autoIcon = auto:CreateTexture(nil, "OVERLAY")
-    autoIcon:SetTexture(MAP_ICON)
-    autoIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    autoIcon:SetSize(BTN - 6, BTN - 6)
-    autoIcon:SetPoint("CENTER")
-    auto.icon = autoIcon
-    auto:SetScript("OnClick", function() ns:SetMiniAutoPopup(not GearGuideDB.mini.autoPopup) end)
-    addTooltip(auto, "Auto-open in zones with recommended items", function()
-        return (GearGuideDB.mini.autoPopup and "On" or "Off")
-            .. ": the tracker opens by itself when you enter a zone or instance where your upgrades "
-            .. "or favorites drop, and closes again when you leave (unless you opened it yourself). "
-            .. "Also: /gg mini auto"
-    end)
-    f.autoBtn = auto
-
-    -- Background opacity: a small square, left half solid, right half at the current opacity.
-    local op = ns.Skin:IconButton(header, "", BTN)
-    op:SetPoint("RIGHT", auto, "LEFT", -4, 0)
-    local S = BTN - 10
-    local solid = op:CreateTexture(nil, "OVERLAY")
-    solid:SetSize(S / 2, S)
-    solid:SetPoint("CENTER", -S / 4, 0)
-    solid:SetColorTexture(color("accent"))
-    local fill = op:CreateTexture(nil, "OVERLAY")
-    fill:SetSize(S / 2, S)
-    fill:SetPoint("CENTER", S / 4, 0)
-    fill:SetColorTexture(color("accent"))
-    op.fill = fill
-    op:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    op:SetScript("OnClick", function(_, button)
-        local o, n = opacity(), #OPACITY_STEPS
-        if button == "RightButton" then  -- next step up (more opaque), wrapping to the lowest
-            for i = n, 1, -1 do
-                if OPACITY_STEPS[i] > o + 0.001 then ns:SetMiniOpacity(OPACITY_STEPS[i]) return end
-            end
-            ns:SetMiniOpacity(OPACITY_STEPS[n])
-        else                             -- next step down (more transparent), wrapping to full
-            for i = 1, n do
-                if OPACITY_STEPS[i] < o - 0.001 then ns:SetMiniOpacity(OPACITY_STEPS[i]) return end
-            end
-            ns:SetMiniOpacity(OPACITY_STEPS[1])
-        end
-    end)
-    op:EnableMouseWheel(true)
-    op:SetScript("OnMouseWheel", function(self, delta)
-        ns:SetMiniOpacity(opacity() + delta * 0.05)
-        if self:IsMouseOver() and self:GetScript("OnEnter") then self:GetScript("OnEnter")(self) end
-    end)
-    addTooltip(op, "Background opacity", function()
-        return string.format("%d%%. Click: more transparent, right-click: less. Mouse wheel: 5%% steps. "
-            .. "Text and icons always stay visible. Also: /gg mini opacity 0-100", math.floor(opacity() * 100 + 0.5))
-    end)
-    f.opacityBtn = op
+    -- Settings and actions live in one menu, so the header keeps room for the zone name.
+    local menu = ns.Skin:MenuButton(header, "", BTN, {
+        tooltip = { "Options", "Open the main window, hide acquired items, auto-open in zones, background opacity." },
+        getItems = function() return ns:MiniMenuItems() end,
+        onSelect = function(value) ns:MiniMenuSelect(value) end,
+    })
+    menu:SetPoint("RIGHT", close, "LEFT", -4, 0)
+    for i = 1, 3 do  -- three-line "hamburger" glyph from 1px-tall textures
+        local line = menu:CreateTexture(nil, "OVERLAY")
+        line:SetSize(10, 2)
+        line:SetPoint("CENTER", 0, 4 - (i - 1) * 4)
+        line:SetColorTexture(color("text"))
+    end
+    f.menuBtn = menu
 
     local plus = ns.Skin:IconButton(header, "+", BTN)
-    plus:SetPoint("RIGHT", op, "LEFT", -8, 0)
+    plus:SetPoint("RIGHT", menu, "LEFT", -8, 0)
     plus:SetScript("OnClick", function() ns:SetMiniCount(GearGuideDB.mini.count + 1) end)
     addTooltip(plus, "Show more rows", function() return "Scroll with the mouse wheel to see the rest of the list." end)
     f.plus = plus
@@ -602,7 +532,7 @@ local function inPvP()
 end
 
 local function handlePvP()
-    local pvp = inPvP()
+    local pvp = inPvP() and GearGuideDB.mini.pvpHide ~= false
     if pvp and not wasPvP then
         autoOpened, popupDeferred = false, false
         hideFrame()
@@ -650,6 +580,42 @@ local function scheduleZoneCheck(delay)
         zoneTimer = nil
         ns:CheckMiniZone()
     end)
+end
+
+-- Options menu (header button): actions, toggles and the opacity steps.
+function ns:MiniMenuItems()
+    local db = GearGuideDB.mini
+    local items = {
+        { value = "open", text = "Open main window" },
+        { value = "settings", text = "All settings..." },
+        { value = "done", text = "Hide acquired items", checked = db.hideCompleted and true or false, keepOpen = true },
+        { value = "auto", text = "Auto-open in zones with upgrades", checked = db.autoPopup and true or false, keepOpen = true },
+        { value = "opacity", text = "Background opacity", header = true },
+    }
+    local cur, best = opacity(), nil
+    for _, step in ipairs(OPACITY_STEPS) do  -- mark the step closest to the current value
+        if not best or math.abs(step - cur) < math.abs(best - cur) then best = step end
+    end
+    for _, step in ipairs(OPACITY_STEPS) do
+        items[#items + 1] = { value = step, text = "    " .. math.floor(step * 100 + 0.5) .. "%",
+                              checked = (step == best), keepOpen = true }
+    end
+    return items
+end
+
+function ns:MiniMenuSelect(value)
+    if value == "open" then
+        ns:ToggleWindow()
+    elseif value == "settings" then
+        ns:ShowWindow("settings")
+    elseif value == "done" then
+        GearGuideDB.mini.hideCompleted = not GearGuideDB.mini.hideCompleted
+        ns:RefreshMini()
+    elseif value == "auto" then
+        ns:SetMiniAutoPopup(not GearGuideDB.mini.autoPopup)
+    elseif type(value) == "number" then
+        ns:SetMiniOpacity(value)
+    end
 end
 
 function ns:SetMiniOpacity(o)
