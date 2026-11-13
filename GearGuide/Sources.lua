@@ -141,11 +141,58 @@ end
 ---------------------------------------------------------------------------
 -- Vendors and professions
 ---------------------------------------------------------------------------
+local getInstant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant or function() end
+
+-- Copper price (as shown, so reputation discounts included) and whether extra costs exist.
+-- Newer clients moved this into C_MerchantFrame.GetItemInfo (a table); older ones return values.
+local function merchantPrice(i)
+    if C_MerchantFrame and C_MerchantFrame.GetItemInfo then
+        local info = C_MerchantFrame.GetItemInfo(i)
+        if type(info) == "table" then return info.price, info.hasExtendedCost end
+    end
+    if GetMerchantItemInfo then
+        local _, _, price, _, _, _, _, extendedCost = GetMerchantItemInfo(i)
+        return price, extendedCost
+    end
+end
+
+-- Every non-gold cost: tokens, marks, currencies. { {n = name, q = amount, i = icon}, ... }
+local function merchantCosts(i)
+    if not (GetMerchantItemCostInfo and GetMerchantItemCostItem) then return nil end
+    local r = { GetMerchantItemCostInfo(i) }
+    local count = tonumber(r[#r]) or 0  -- some clients return honor, arena points, count
+    local out = {}
+    for j = 1, count do
+        local icon, amount, link, currencyName = GetMerchantItemCostItem(i, j)
+        local name = currencyName or (link and link:match("%[(.-)%]"))
+        if name and (amount or 0) > 0 then out[#out + 1] = { n = name, q = amount, i = icon } end
+    end
+    return out[1] and out or nil
+end
+
+-- Remembers what this vendor charges for the item (latest visit wins).
+local function learnPrice(id, vendor, i)
+    local okP, price, extended = pcall(merchantPrice, i)
+    local okC, costs = true, nil
+    if extended ~= false then okC, costs = pcall(merchantCosts, i) end
+    if not okP then price = nil end
+    if not okC then costs = nil end
+    if not ((price or 0) > 0 or costs) then return end
+    GearGuideLearned.prices[id] = GearGuideLearned.prices[id] or {}
+    GearGuideLearned.prices[id][vendor] = { g = (price or 0) > 0 and price or nil, c = costs }
+end
+
 local function onMerchantShow()
-    local src = { t = "vendor", n = Plain(UnitName("npc")) or "?", z = zone() }
+    local vendor = Plain(UnitName("npc")) or "?"
+    local z = zone()
     for i = 1, (GetMerchantNumItems() or 0) do
         local link = GetMerchantItemLink(i)
-        if link then ns:LearnLink(link, src) end
+        if link then
+            ns:LearnLink(link, { t = "vendor", n = vendor, z = z })  -- own table per item
+            -- Gear only; the instant lookup knows the slot even before the item is cached.
+            local id, _, _, equipLoc = getInstant(link)
+            if id and ns.EQUIPLOC_GROUP[equipLoc] then learnPrice(id, vendor, i) end
+        end
     end
 end
 

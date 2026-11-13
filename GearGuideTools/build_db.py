@@ -202,6 +202,26 @@ HEADER = [
 ]
 
 
+def clean_prices(by_vendor) -> dict:
+    """Validated {vendor: {"g": copper, "c": [{"n", "q", "i"}]}} from the saved variables."""
+    out = {}
+    for vendor, p in as_dict(by_vendor).items():
+        if not (isinstance(vendor, str) and isinstance(p, dict)):
+            continue
+        rec = {}
+        if isinstance(p.get("g"), (int, float)) and p["g"] > 0:
+            rec["g"] = int(p["g"])
+        costs = p.get("c")
+        costs = list(costs.values()) if isinstance(costs, dict) else costs  # Lua arrays may parse as dicts
+        clean = [{k: c[k] for k in ("n", "q", "i") if c.get(k) is not None}
+                 for c in costs or [] if isinstance(c, dict) and c.get("n") and c.get("q")]
+        if clean:
+            rec["c"] = clean
+        if rec:
+            out[vendor] = rec
+    return out
+
+
 def excluded(rec: dict, keep_poor: bool = False) -> str | None:
     """Reason an item is left out of the shipped database, or None to keep it."""
     if EXCLUDE_NAME.search(rec.get("n") or ""):
@@ -241,6 +261,15 @@ def collect(saved: Path, corrections: Path = CORRECTIONS, include_learned: bool 
         for iid, srcs in as_dict(learned.get("sources")).items():
             if int(iid) in items and isinstance(srcs, list) and srcs:
                 items[int(iid)]["src"] = [s for s in srcs if isinstance(s, dict)]
+        # Vendor prices seen in game -> item["vp"] = {vendor: {g: copper, c: [{n, q, i}, ...]}}
+        priced = 0
+        for iid, by_vendor in as_dict(learned.get("prices")).items():
+            vp = clean_prices(by_vendor)
+            if int(iid) in items and vp:
+                items[int(iid)]["vp"] = vp
+                priced += 1
+        if priced:
+            print(f"Vendor prices: {priced} items")
         # Sources heard from other GearGuide users: only those reported by 2+ different players ship.
         trusted = 0
         for iid, srcs in as_dict(learned.get("shared")).items():

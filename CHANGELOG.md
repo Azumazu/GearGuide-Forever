@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0 (2026-11-12)
+
+- Vendor prices: "Where to get it" shows what a vendor charges for an item, in gold and every
+  other currency or token it costs (e.g. "Vendor: Gerard Abernathy (Westfall) - 1g 23s 45c").
+  Prices are learned when you open a vendor and will ship with future database updates
+- Fix: a vendor or quest giver could be listed twice (once from the database, once learned in game)
+
 ## 0.4.9 (2026-11-12)
 
 - Assassination rogues from level 40 are only recommended daggers for main and off hand

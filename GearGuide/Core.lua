@@ -184,7 +184,9 @@ function ns:GetSources(id)
     local faction = ns.PlayerFaction()
     local function add(list)
         for _, s in ipairs(list or {}) do
-            local key = (s.t or "") .. "|" .. (s.n or "") .. "|" .. (s.z or "")
+            -- Zone by name: shipped sources hold area IDs, learned ones zone names, and the same
+            -- vendor/quest giver must not be listed twice. The first (shipped, with map spot) wins.
+            local key = (s.t or "") .. "|" .. (s.n or "") .. "|" .. tostring(ns.ZoneName(s.z) or s.z or "")
             -- Hide the other faction's quests, city vendors and PvP rewards.
             local mine = not s.f or not faction or s.f == faction
             if mine and not seen[key] then seen[key] = true; out[#out + 1] = s end
@@ -207,7 +209,52 @@ function ns:GetSources(id)
     end
     add(GearGuideLearned.sources[id])
     if ns.GetSharedSources then add(ns:GetSharedSources(id)) end  -- from other GearGuide users
+    -- Vendor prices live apart from the sources (keyed by vendor name), so shipped and learned
+    -- vendor entries both get them. Copies: never write into saved or shipped tables.
+    for i, s in ipairs(out) do
+        if s.t == "vendor" then
+            local price = self:GetVendorPrice(id, s.n)
+            if price then
+                local c = {}
+                for k, v in pairs(s) do c[k] = v end
+                c.price = price
+                out[i] = c
+            end
+        end
+    end
     return out
+end
+
+-- { g = copper or nil, c = { {n = currency, q = amount, i = icon}, ... } or nil } for an item at a
+-- vendor: seen in game (newest), else shipped in Data.lua.
+function ns:GetVendorPrice(id, vendor)
+    if not vendor then return nil end
+    local learned = GearGuideLearned.prices and GearGuideLearned.prices[id]
+    if learned and learned[vendor] then return learned[vendor] end
+    local dbItem = GearGuide_Data.items[id]
+    return dbItem and dbItem.vp and dbItem.vp[vendor] or nil
+end
+
+-- "1g 25s" (coin icons where the client has them) + " + 2 Mark of Honor" for each extra cost.
+function ns.FormatPrice(p)
+    local parts = {}
+    if p.g and p.g > 0 then
+        if GetCoinTextureString then
+            parts[#parts + 1] = GetCoinTextureString(p.g)
+        else
+            local gold, silver, copper = math.floor(p.g / 10000), math.floor(p.g / 100) % 100, p.g % 100
+            local t = {}
+            if gold > 0 then t[#t + 1] = gold .. "g" end
+            if silver > 0 then t[#t + 1] = silver .. "s" end
+            if copper > 0 then t[#t + 1] = copper .. "c" end
+            parts[#parts + 1] = table.concat(t, " ")
+        end
+    end
+    for _, cost in ipairs(p.c or {}) do
+        local icon = cost.i and ("|T" .. cost.i .. ":0|t ") or ""
+        parts[#parts + 1] = icon .. (cost.q or 1) .. " " .. (cost.n or "?")
+    end
+    return table.concat(parts, " + ")
 end
 
 -- Does anyone know where this item comes from? Cheap check (no resolving), any faction.
@@ -250,6 +297,7 @@ function ns.FormatSource(s)
     local text = (SOURCE_LABELS[s.t] or s.t or "?") .. ": " .. (s.n or "?")
     local zone = ns.ZoneName(s.z)
     if zone and zone ~= "" then text = text .. " (" .. zone .. ")" end
+    if s.price then text = text .. " |cffffffff- " .. ns.FormatPrice(s.price) .. "|r" end
     if s.shared then text = text .. " |cff888888(shared by players)|r" end
     if s.k == "guess" then text = text .. " |cff888888(likely)|r" end
     return text
@@ -564,6 +612,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
         GearGuideLearned = GearGuideLearned or {}
         GearGuideLearned.items = GearGuideLearned.items or {}
         GearGuideLearned.sources = GearGuideLearned.sources or {}
+        GearGuideLearned.prices = GearGuideLearned.prices or {}  -- [itemID][vendor] = { g = copper, c = costs }
         GearGuideHarvest = GearGuideHarvest or {}
         GearGuideHarvest.items = GearGuideHarvest.items or {}
         GearGuideHarvest.scan = GearGuideHarvest.scan or {}
@@ -695,7 +744,7 @@ SlashCmdList.GEARGUIDE = function(msg)
             db, tostring(GearGuide_Data.meta.generated), tostring(GearGuide_Data.meta.source or GearGuide_Data.meta.namespace), learned))
         ns.Print("Client scan: " .. ns:ScanStatus())
     elseif cmd == "forget" then
-        GearGuideLearned.items, GearGuideLearned.sources = {}, {}
+        GearGuideLearned.items, GearGuideLearned.sources, GearGuideLearned.prices = {}, {}, {}
         ns:InvalidateItems()
         ns.Print("Forgot all items and sources learned in game.")
     else

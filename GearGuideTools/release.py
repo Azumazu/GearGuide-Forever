@@ -35,7 +35,7 @@ ADDON = ROOT / "GearGuide"
 DATA = ADDON / "Data.lua"
 TOC = ADDON / "GearGuide.toc"
 CHANGELOG = ROOT / "CHANGELOG.md"
-COMPARE_FIELDS = ("n", "q", "il", "rl", "eq", "c", "sc", "st", "cls", "u")
+COMPARE_FIELDS = ("n", "q", "il", "rl", "eq", "c", "sc", "st", "cls", "u", "vp")  # vp: vendor prices
 SHOW_NAMES = 15  # items listed by name per category in the changelog
 
 
@@ -144,6 +144,8 @@ def main() -> int:
             if iid in base:
                 if rec.get("src"):
                     base[iid]["src"] = list(rec["src"])
+                if rec.get("vp"):
+                    base[iid]["vp"] = {**base[iid].get("vp", {}), **rec["vp"]}  # newly seen prices win
             else:
                 base[iid] = rec
         if questie:
@@ -160,6 +162,12 @@ def main() -> int:
         meta["build"] = old_meta.get("build", meta.get("build"))
         meta["count"] = len(items)
         scan = {"phase": "done"}
+    # Vendor prices only come from players visiting vendors: keep every shipped price a fresh
+    # scan doesn't carry (prices seen since then win).
+    for iid, rec in items.items():
+        old_vp = (old.get(iid) or {}).get("vp")
+        if isinstance(old_vp, dict) and old_vp:
+            rec["vp"] = {**old_vp, **(rec.get("vp") or {})}
     if scan.get("phase") != "done" and not args.force:
         print(f"The scan isn't finished (phase: {scan.get('phase') or 'not started'}). Let /gg scan complete, "
               "then /reload or log out so WoW saves it. (--force overrides.)", file=sys.stderr)
