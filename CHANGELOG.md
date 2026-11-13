@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.9 (2026-11-12)
+
+- Assassination rogues from level 40 are only recommended daggers for main and off hand
+  (ranged slot unchanged; other rogue specs still see every weapon type)
+
 ## 0.4.8 (2026-11-12)
 
 - The mini tracker scrolls: the +/- buttons set how many rows it shows, and the mouse wheel

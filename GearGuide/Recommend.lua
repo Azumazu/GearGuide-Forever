@@ -176,6 +176,20 @@ local HAND_GROUPS = {
 }
 local NO_OFFHAND = { twohand = true, onehand = true }
 
+-- Specs whose talents need one weapon type in the hands (main and off hand; ranged unaffected).
+-- Assassination rogues build around Backstab/Ambush and dagger talents once the tree matures.
+local WEAPON_ONLY = {
+    ROGUE = { ASSASSINATION = { minLevel = 40, subclasses = { [15] = true } } },  -- 15 = dagger
+}
+local HAND_SLOTS = { INVTYPE_WEAPON = true, INVTYPE_WEAPONMAINHAND = true, INVTYPE_WEAPONOFFHAND = true,
+    INVTYPE_2HWEAPON = true }
+
+function ns.WeaponTypeAllowed(item, class, specKey, level)
+    local rule = WEAPON_ONLY[class] and WEAPON_ONLY[class][specKey]
+    if not rule or (level or 1) < rule.minLevel or not HAND_SLOTS[item.eq] then return true end
+    return item.c == ns.ITEM_CLASS_WEAPON and rule.subclasses[item.sc or -1] == true
+end
+
 function ns:GroupsForItem(item, setup)
     local hands = HAND_GROUPS[item.eq]
     if hands then return hands[setup] end
@@ -227,7 +241,8 @@ function ns:BuildRecommendations()
         -- Uncommon (green) and better only: common/poor gear is vendor filler, not worth a slot
         -- in the list (favorites are added separately and still show).
         if groups and (item.q or 1) >= MIN_QUALITY and eff >= minL and eff <= maxL
-            and self:ShowsItem(id) and self:IsUsable(item, ctx.class, level) then
+            and self:ShowsItem(id) and self:IsUsable(item, ctx.class, level)
+            and ns.WeaponTypeAllowed(item, ctx.class, ctx.spec, level) then
             local score = self:Score(item, weights, ctx)
             local statsOk, armorOk = self:IsSuitable(item, weights, ctx, score)
             -- Nothing to recommend about an item the spec gets no value from (stat-less relics,
