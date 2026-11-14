@@ -50,7 +50,7 @@ end
 -- Loot: who dropped it. Loot slots carry the source's GUID (GetLootSourceInfo); names come from
 -- a small GUID -> name cache filled from units the player targets or mouses over.
 ---------------------------------------------------------------------------
-local nameByGUID, nameCount = {}, 0
+local nameByGUID, levelByGUID, nameCount = {}, {}, 0
 local Plain = ns.Plain  -- secret values (GUIDs/names the client protects) become nil
 
 local function rememberUnit(unit)
@@ -59,31 +59,56 @@ local function rememberUnit(unit)
     if Plain(UnitIsPlayer(unit)) ~= false then return end  -- players (or unknown) aren't loot sources
     local name = Plain(UnitName(unit))
     if not name then return end
-    if nameCount > 300 then wipe(nameByGUID); nameCount = 0 end  -- keep it small
+    if nameCount > 300 then wipe(nameByGUID); wipe(levelByGUID); nameCount = 0 end  -- keep it small
     nameByGUID[guid] = name
+    levelByGUID[guid] = Plain(UnitLevel and UnitLevel(unit))
     nameCount = nameCount + 1
 end
 
-local function lootSourceName(slot)
+-- Who dropped the item in this loot slot: name and level (nil level = unknown or a boss), or nil
+-- when it can't be told. Loot from a bag, box or other container item, fishing or anything else
+-- that isn't a creature or chest is not learned: naming it after the creature that happens to be
+-- targeted credited raid gear in a container to the last Stonetusk Boar killed.
+local function lootSource(slot)
     if type(GetLootSourceInfo) == "function" then
         local guid = Plain(GetLootSourceInfo(slot))
         if guid then
-            if nameByGUID[guid] then return nameByGUID[guid] end
             local kind = guid:match("^(%a+)")
             if kind == "GameObject" then return "Container" end
+            if kind ~= "Creature" and kind ~= "Vehicle" then return nil end
+            if nameByGUID[guid] then return nameByGUID[guid], levelByGUID[guid] end
+            if Plain(UnitGUID("target")) == guid then  -- the very creature, not just any dead target
+                return Plain(UnitName("target")), Plain(UnitLevel("target"))
+            end
+            return nil
         end
+        return nil  -- the client didn't say where this loot came from: don't guess
     end
+    -- Clients without GetLootSourceInfo: the dead creature being targeted is the best guess.
     if Plain(UnitExists("target")) and Plain(UnitIsDead("target")) then
-        return Plain(UnitName("target")) or "Unknown"
+        return Plain(UnitName("target")), Plain(UnitLevel("target"))
     end
-    return "Unknown"
+    return nil
+end
+
+-- A level 10 boar can't drop level 60 raid gear: skip drops far above the creature's level.
+local function plausibleDrop(link, level)
+    if not level or level <= 0 then return true end  -- unknown, or a boss ("??")
+    local id = ns.LinkToId(link)
+    local item = id and ns:GetItem(id)
+    local _, _, _, _, minLevel = GetItemInfo(link)
+    local need = (item and item.rl) or minLevel or 0
+    return need <= level + 10
 end
 
 local function onLootOpened()
     local z = zone()
     for i = 1, GetNumLootItems() do
         local link = GetLootSlotLink(i)
-        if link then ns:LearnLink(link, { t = "drop", n = lootSourceName(i), z = z }) end
+        local name, level = lootSource(i)
+        if link and name and plausibleDrop(link, level) then
+            ns:LearnLink(link, { t = "drop", n = name, z = z })
+        end
     end
 end
 

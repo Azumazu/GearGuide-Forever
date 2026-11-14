@@ -616,6 +616,12 @@ def merge_sources(items: dict[int, dict], questie_path: Path, chances: dict | No
         if not new:
             continue
         have = rec.setdefault("src", [])
+        if any(s.get("dc") for s in new):
+            # The item's loot table is known: learned/shared drops from other creatures are
+            # misattributed (older versions credited container loot to the targeted creature).
+            droppers = {s.get("n") for s in new if s.get("t") == "drop"}
+            have[:] = [s for s in have if not (isinstance(s, dict) and s.get("t") == "drop"
+                                               and s.get("n") not in droppers)]
         known = {(s.get("t"), s.get("n")): s for s in have if isinstance(s, dict)}
         for s in new:
             old = known.get((s.get("t"), s.get("n")))

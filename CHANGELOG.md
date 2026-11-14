@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.1 (2026-11-14)
+
+- Fixed raid gear showing up as a drop from low level creatures (e.g. Molten Core rings "dropped" by a Stonetusk Boar in Elwynn Forest). Loot from a bag or other container was credited to whatever dead creature you had targeted, and then shared with other GearGuide users. GearGuide now only learns loot from the creature it really came from, ignores gear far above that creature's level, and hides such wrong entries already learned or shared.
+
 ## 0.12.0 (2026-11-14)
 
 - Drop chances: creature and chest drops now show how likely the item is to drop (e.g. "Drop: Ragnaros 20%") in item tooltips, the item details and the mini tracker. The creatures with the best chance are listed first.

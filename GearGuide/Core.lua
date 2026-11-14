@@ -185,6 +185,7 @@ end
 function ns:GetSources(id)
     local out, seen = {}, {}
     local faction = ns.PlayerFaction()
+    local knownDroppers  -- shipped drop names, when the shipped data knows the item's loot table
     local function add(list)
         for _, s in ipairs(list or {}) do
             -- Zone by name: shipped sources hold area IDs, learned ones zone names, and the same
@@ -192,7 +193,10 @@ function ns:GetSources(id)
             local key = (s.t or "") .. "|" .. (s.n or "") .. "|" .. tostring(ns.ZoneName(s.z) or s.z or "")
             -- Hide the other faction's quests, city vendors and PvP rewards.
             local mine = not s.f or not faction or s.f == faction
-            if mine and not seen[key] then seen[key] = true; out[#out + 1] = s end
+            -- Learned/shared drops from a creature that isn't in the item's known loot table are
+            -- misattributed (older versions credited container loot to the targeted creature).
+            local plausible = not (knownDroppers and s.t == "drop" and not knownDroppers[s.n or ""])
+            if mine and plausible and not seen[key] then seen[key] = true; out[#out + 1] = s end
         end
     end
     local dbItem = GearGuide_Data.items[id]
@@ -212,6 +216,12 @@ function ns:GetSources(id)
             end
         end
         add(resolved)
+        if type(dbItem.dc) == "table" then
+            knownDroppers = {}
+            for _, s in ipairs(resolved) do
+                if s.t == "drop" and s.n then knownDroppers[s.n] = true end
+            end
+        end
     end
     add(GearGuideLearned.sources[id])
     if ns.GetSharedSources then add(ns:GetSharedSources(id)) end  -- from other GearGuide users
