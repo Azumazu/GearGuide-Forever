@@ -47,50 +47,39 @@ local function anchorBeside(tip, owner, outer)
     end
 end
 
--- Puts the tooltip next to the mouse cursor: to its right on the left half of the screen, to its
--- left on the right half (so it, and the client's comparison tooltips that hang off its outer side,
--- open toward the free space). Vertically it grows away from the nearer screen edge, so the client's
--- clamp-to-screen never has to shove it over the cursor.
--- `right` (optional) keeps the side chosen earlier; it flips only when the tooltip no longer fits,
--- so moving along a row that crosses the middle of the screen doesn't make it jump sides.
--- Returns the side used.
+-- Puts the (already filled and shown, so its size is known) tooltip beside the mouse cursor, once
+-- per hovered row. Always the same rule, so it never jumps around: right of and below the cursor;
+-- left of it only if it would run off the right screen edge, above it only if it would run off
+-- the bottom. It stays put while the mouse moves along the row.
 local CURSOR_GAP = 16
-local function placeAtCursor(tip, right)
+local cursorSpot  -- { owner, point, x, y } of the current cursor tooltip (kept when it is re-shown)
+local function placeAtCursor(tip, owner)
     local s = UIParent:GetEffectiveScale()
-    local x, y = GetCursorPosition()
-    x, y = x / s, y / s
-    local screenW = UIParent:GetWidth()
-    if right == nil then
-        right = x < screenW / 2
-    else
-        local w = (tip:GetWidth() or 0) * (tip:GetEffectiveScale() or 1) / s
-        if right and x + CURSOR_GAP + w > screenW then right = false
-        elseif not right and x - CURSOR_GAP - w < 0 then right = true end
+    local ts = tip:GetEffectiveScale() or 1
+    local k = s / ts  -- UIParent units -> tooltip units
+    local spot = cursorSpot
+    if not (spot and spot.owner == owner) then
+        local x, y = GetCursorPosition()
+        x, y = x / s, y / s
+        local w = (tip:GetWidth() or 0) * ts / s
+        local h = (tip:GetHeight() or 0) * ts / s
+        local right = x + CURSOR_GAP + w <= UIParent:GetWidth()
+        local below = y - CURSOR_GAP - h >= 0
+        spot = {
+            owner = owner,
+            point = (below and "TOP" or "BOTTOM") .. (right and "LEFT" or "RIGHT"),
+            x = x + (right and CURSOR_GAP or -CURSOR_GAP),
+            y = y + (below and -CURSOR_GAP or CURSOR_GAP),
+        }
+        cursorSpot = spot
     end
-    local top = y > UIParent:GetHeight() / 2
-    local point = (top and "TOP" or "BOTTOM") .. (right and "LEFT" or "RIGHT")
-    local k = s / (tip:GetEffectiveScale() or 1)  -- UIParent units -> tooltip units
     tip:ClearAllPoints()
-    tip:SetPoint(point, UIParent, "BOTTOMLEFT",
-        (x + (right and CURSOR_GAP or -CURSOR_GAP)) * k, (y + (top and 0 or 4)) * k)
-    return right
+    tip:SetPoint(spot.point, UIParent, "BOTTOMLEFT", spot.x * k, spot.y * k)
 end
-
--- Keeps a cursor-anchored tooltip beside the mouse while it moves over the (wide) owner row.
-local follower = CreateFrame("Frame")
-follower:Hide()
-follower:SetScript("OnUpdate", function(self)
-    if not self.owner or not GameTooltip:IsShown() or not GameTooltip:IsOwned(self.owner) then
-        self.owner = nil
-        self:Hide()
-        return
-    end
-    self.right = placeAtCursor(GameTooltip, self.right)
-end)
 
 -- info (optional): { score = n, delta = n, class = "MAGE", anchor = "ANCHOR_RIGHT",
 --                    beside = frame (place the tooltip outside this frame instead of using anchor),
---                    cursor = true (beside the mouse, on the side with more room, following it) }
+--                    cursor = true (beside the mouse cursor, placed once per hover) }
 function ns:ShowItemTooltip(owner, id, info)
     info = info or {}
     pendingTip = nil
@@ -99,17 +88,12 @@ function ns:ShowItemTooltip(owner, id, info)
         pendingTip = { owner = owner, id = id, info = info }
     end
     local tip = GameTooltip
-    -- Re-shown while still up for this owner (its item data just arrived): keep the cursor side.
-    local keepSide = GameTooltip:IsShown() and GameTooltip:IsOwned(owner) and follower.right or nil
-    follower.owner = nil
-    follower:Hide()
+    -- Re-shown while still up for this row (its item data just arrived): keep its spot.
+    if not (tip:IsShown() and tip:IsOwned(owner)) then cursorSpot = nil end
     if info.beside then
         anchorBeside(tip, owner, info.beside)
     elseif info.cursor then
-        tip:SetOwner(owner, "ANCHOR_NONE")
-        follower.right = placeAtCursor(tip, keepSide)
-        follower.owner = owner
-        follower:Show()
+        tip:SetOwner(owner, "ANCHOR_NONE")  -- placed below, once its size is known
     else
         tip:SetOwner(owner, info.anchor or "ANCHOR_RIGHT")
     end
@@ -150,6 +134,7 @@ function ns:ShowItemTooltip(owner, id, info)
         if hasMap then tip:AddLine("Click a source in the GearGuide window to show it on the map.", 0.5, 0.5, 0.5, true) end
     end
     tip:Show()
+    if info.cursor then placeAtCursor(tip, owner) end
 end
 
 function ns:HideItemTooltip()

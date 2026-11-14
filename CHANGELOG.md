@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.11.4 (2026-11-14)
+
+- Main window item tooltips no longer jump around: they open right of and below the cursor (left or
+  above only when there's no room on screen) and stay put while you move along the row.
+
 ## 0.11.3 (2026-11-14)
 
 - Items without a known source now say "Not discovered yet"; the footer button is now
