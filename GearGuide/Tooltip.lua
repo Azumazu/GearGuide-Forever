@@ -133,7 +133,7 @@ function ns:ShowItemTooltip(owner, id, info)
 
     local sources = self:GetSources(id)
     if #sources == 0 then
-        tip:AddLine("Source unknown. Run the updater, or loot/see the item in game.", 0.6, 0.6, 0.6, true)
+        tip:AddLine("Not discovered yet. GearGuide learns the source when you loot, buy or see the item in game.", 0.6, 0.6, 0.6, true)
     else
         tip:AddLine("Where to get it:", 1, 0.82, 0)
         local shown, hasMap = 0, false

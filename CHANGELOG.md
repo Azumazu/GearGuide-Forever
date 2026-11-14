@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.3 (2026-11-14)
+
+- Items without a known source now say "Not discovered yet"; the footer button is now
+  "Undiscovered: Shown/Hidden".
+- Removed developer instructions ("run update_db.py") from player-facing text, and the
+  "older game build" note from the window footer.
+
 ## 0.11.2 (2026-11-14)
 
 - Item tooltips in the main window open beside the mouse cursor, on the side with more room, and

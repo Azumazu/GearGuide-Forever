@@ -511,7 +511,7 @@ end
 local function emptyDatabaseNote(rows)
     if #ns:AllItemIds() == 0 then
         rows[#rows + 1] = { kind = "note",
-            text = "No item data yet. Run GearGuideTools/update_db.py, or play to learn items." }
+            text = "No item data yet. GearGuide learns items as you play." }
     end
 end
 
@@ -864,7 +864,7 @@ function updateDetail()
     bodyAdd("Where to get it", hdr, "accent", 10)
     local sources = ns:GetSources(id)
     if #sources == 0 then
-        bodyAdd("Source unknown. Run GearGuideTools/update_db.py, or loot / see the item in game to learn it.",
+        bodyAdd("Not discovered yet. GearGuide learns the source when you loot, buy or see the item in game.",
             small, "textDim", 1, 6)
     else
         local onMap = 0
@@ -909,14 +909,14 @@ local function updateStatus()
     local meta = GearGuide_Data.meta or {}
     local parts = {}
     if ns.dataExpired then
-        parts[#parts + 1] = "API data expired (older than 30 days, re-run the updater)"
+        parts[#parts + 1] = "Item data expired (older than 30 days, update GearGuide)"
     elseif db > 0 and meta.source ~= "client" then
         -- Blizzard Developer API terms: identify Blizzard as the data source without implying endorsement.
         parts[#parts + 1] = string.format("Item data: Blizzard Battle.net API (not endorsed by Blizzard), %d items, %s",
             db, tostring(meta.generated or "?"))
     elseif db > 0 then
         parts[#parts + 1] = string.format("Database: %d items (%s%s)", db, tostring(meta.version or meta.generated or "?"),
-            ns.dbOutdated and ", older game build" or "")
+            (ns.dbOutdated and GearGuideDB.maintainer) and ", older game build" or "")
     end
     if scanned > 0 then parts[#parts + 1] = string.format("scanned: %d", scanned) end
     parts[#parts + 1] = string.format("learned in game: %d", learned)
@@ -929,7 +929,7 @@ local function updateStatus()
     end
     if W.unknownBtn then
         local shown = GearGuideDB.showUnknown
-        W.unknownBtn:SetText(shown and "Unknown sources: Shown" or "Unknown sources: Hidden")
+        W.unknownBtn:SetText(shown and "Undiscovered: Shown" or "Undiscovered: Hidden")
         if W.unknownBtn.SetActive then W.unknownBtn:SetActive(shown) end
     end
 end
@@ -1459,12 +1459,12 @@ local function createWindow()
     W.shareBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
 
     -- Items nobody knows a source for: hidden by default (Core.lua ns:ShowsItem).
-    W.unknownBtn = Skin:Button(content, "Unknown sources: Hidden", 150, Skin.CONTROL_H)
+    W.unknownBtn = Skin:Button(content, "Undiscovered: Hidden", 150, Skin.CONTROL_H)
     W.unknownBtn:SetPoint("RIGHT", W.shareBtn, "LEFT", -Skin.GAP, 0)
     W.unknownBtn:SetScript("OnClick", function() ns:SetShowUnknown(not GearGuideDB.showUnknown) end)
     W.unknownBtn:HookScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
-        GameTooltip:AddLine("Items with an unknown source")
+        GameTooltip:AddLine("Undiscovered items")
         GameTooltip:AddLine("Items nobody has found a source for yet (no known drop, quest, vendor or recipe). "
             .. "Hidden from recommendations, the browser and the mini tracker unless shown here. "
             .. "Favorites always show. Looting or buying an item teaches GearGuide its source.", 1, 1, 1, true)

@@ -292,7 +292,7 @@ end
 
 function ns:SetShowUnknown(on)
     GearGuideDB.showUnknown = on and true or false
-    ns.Print(on and "Showing items with an unknown source." or "Hiding items with an unknown source (favorites still show).")
+    ns.Print(on and "Showing items whose source is not discovered yet." or "Hiding items whose source is not discovered yet (favorites still show).")
     self:RequestRefresh()
 end
 
@@ -361,7 +361,7 @@ end
 
 function ns:SourceSummary(id)
     local list = self:GetSources(id)
-    if #list == 0 then return "|cff888888Source unknown|r" end
+    if #list == 0 then return "|cff888888Not discovered yet|r" end
     local text = ns.FormatSource(list[1])
     if #list > 1 then text = text .. string.format(" |cff888888+%d more|r", #list - 1) end
     return text
@@ -678,7 +678,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
             ns.Print("Data.lua was built for a newer GearGuide version and was not loaded. Update the addon.")
         elseif ns.dataExpired then
             ns.Print("Item database is older than 30 days and was not loaded (Blizzard API terms). "
-                .. "Re-run GearGuideTools/update_db.py to refresh it.")
+                .. "Update GearGuide to refresh it.")
         end  -- an empty database starts building by itself (ns:InitHarvest)
     elseif event == "PLAYER_LEVEL_UP" or event == "PLAYER_EQUIPMENT_CHANGED"
         or event == "CHARACTER_POINTS_CHANGED" or event == "PLAYER_TALENT_UPDATE"

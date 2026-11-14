@@ -189,7 +189,7 @@ function ns:CreateSettingsPanel(parent)
         function(on) ns:SetSharing(on) end,
         "Shares the sources you discover (which creature, quest or vendor gives an item) with GearGuide users "
         .. "in your guild and group, and receives theirs. Invisible, no chat messages, no character data.")
-    panel.unknown = check("Show items with an unknown source",
+    panel.unknown = check("Show items not discovered yet",
         function() return GearGuideDB.showUnknown end,
         function(on) ns:SetShowUnknown(on) end,
         "Items nobody has found a source for yet. Favorites always show.")
