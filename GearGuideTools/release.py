@@ -33,6 +33,7 @@ import package  # noqa: E402
 ROOT = Path(os.environ.get("GEARGUIDE_ROOT", HERE.parent))  # override for tests
 ADDON = ROOT / "GearGuide"
 DATA = ADDON / "Data.lua"
+CMANGOS_DUMP = HERE / ".cache" / "ClassicDB.sql.gz"  # not committed (see .gitignore)
 TOC = ADDON / "GearGuide.toc"
 CHANGELOG = ROOT / "CHANGELOG.md"
 COMPARE_FIELDS = ("n", "q", "il", "rl", "eq", "c", "sc", "st", "cls", "u", "vp")  # vp: vendor prices
@@ -63,6 +64,11 @@ def read_shipped(path: Path) -> tuple[dict[int, dict], dict]:
                 if isinstance(s, dict) and isinstance(s.get("l"), int):
                     s = {**{k: v for k, v in s.items() if k != "l"}, "loc": locs.get(s["l"])}
                 resolved.append(s)
+            dc = rec.pop("dc", None)  # item.dc[i] is the drop chance of item.src[i]
+            if isinstance(dc, list):
+                for s, c in zip(resolved, dc):
+                    if isinstance(s, dict) and c:
+                        s["dc"] = c
             rec["src"] = resolved
     return items, meta if isinstance(meta, dict) else {}
 
@@ -120,7 +126,9 @@ def main() -> int:
     p.add_argument("--corrections", type=Path, default=CORRECTIONS)
     p.add_argument("--questie", type=Path, help="QuestieDB folder for item sources (default: the one in --wow)")
     p.add_argument("--no-questie", action="store_true")
-    p.add_argument("--cmangos", type=Path, help="cmangos classic-db dump (.sql or .sql.gz) for vendor gold prices")
+    p.add_argument("--cmangos", type=Path, default=CMANGOS_DUMP if CMANGOS_DUMP.exists() else None,
+                   help="cmangos classic-db dump (.sql or .sql.gz) for vendor gold prices and drop chances "
+                        "(default: GearGuideTools/.cache/ClassicDB.sql.gz when present)")
     p.add_argument("--keep-poor", action="store_true", help="keep gray (poor quality) items")
     p.add_argument("--sources", action="store_true", help="release even if only new sources were learned")
     p.add_argument("--force", action="store_true", help="release even if the scan is unfinished or nothing changed")
@@ -130,7 +138,12 @@ def main() -> int:
     saved = args.saved or find_saved_variables(args.wow)
     print(f"Reading scan from {saved}")
     questie = None if args.no_questie else (args.questie or default_questie(args.wow))
-    items, meta, scan = collect(saved, args.corrections, questie=questie, keep_poor=args.keep_poor)
+    chances = None
+    if args.cmangos and questie:
+        from import_cmangos import drop_chances
+        chances = drop_chances(args.cmangos)
+        print(f"cmangos drop chances: {sum(len(v) for v in chances['npc'].values())} creature drops")
+    items, meta, scan = collect(saved, args.corrections, questie=questie, keep_poor=args.keep_poor, chances=chances)
     old, old_meta = read_shipped(DATA)
     if meta.get("scanned", 0) == 0 and old:
         # Local scan cleared (/gg scan reset): use the shipped items as the base so Questie-only and
@@ -151,7 +164,7 @@ def main() -> int:
                 base[iid] = rec
         if questie:
             from import_questie import merge_sources, questie_version
-            merge_sources(base, questie)
+            merge_sources(base, questie, chances)
             meta["questie"] = questie_version(questie)
             meta["credits"] = "Item sources include data from the Questie project's database (GPL-3.0)"
         apply_corrections(base, args.corrections)
@@ -165,6 +178,17 @@ def main() -> int:
         meta["build"] = old_meta.get("build", meta.get("build"))
         meta["count"] = len(items)
         scan = {"phase": "done"}
+    # Drop chances: from the cmangos dump when given, else kept from the shipped Data.lua.
+    if chances:
+        from import_cmangos import DROP_CREDITS
+        meta["credits"] = "; ".join(c for c in (meta.get("credits"), DROP_CREDITS) if c)
+    else:
+        for iid, rec in items.items():
+            old_dc = {(s.get("t"), s.get("n")): s["dc"] for s in (old.get(iid) or {}).get("src") or []
+                      if isinstance(s, dict) and s.get("dc")}
+            for s in rec.get("src") or []:
+                if isinstance(s, dict) and not s.get("dc") and (s.get("t"), s.get("n")) in old_dc:
+                    s["dc"] = old_dc[(s.get("t"), s.get("n"))]
     # Vendor prices only come from players visiting vendors: keep every shipped price a fresh
     # scan doesn't carry (prices seen since then win).
     for iid, rec in items.items():

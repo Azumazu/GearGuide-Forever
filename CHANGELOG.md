@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.0 (2026-11-14)
+
+- Drop chances: creature and chest drops now show how likely the item is to drop (e.g. "Drop: Ragnaros 20%") in item tooltips, the item details and the mini tracker. The creatures with the best chance are listed first.
+- 359 more items now show where they drop, mostly boss and named-creature loot (e.g. Choker of the Fire Lord, Battleguard Sartura's drops).
+- Drop chances come from the cmangos classic-db project and are based on the original game; WoW: Forever's own rates may differ slightly.
+
 ## 0.11.4 (2026-11-14)
 
 - Main window item tooltips no longer jump around: they open right of and below the cursor (left or

@@ -236,7 +236,7 @@ def excluded(rec: dict, keep_poor: bool = False) -> str | None:
 
 
 def collect(saved: Path, corrections: Path = CORRECTIONS, include_learned: bool = True,
-            questie: Path | None = None, keep_poor: bool = False):
+            questie: Path | None = None, keep_poor: bool = False, chances: dict | None = None):
     """Reads a SavedVariables file -> (items, meta, scan_state). Shared by build_db and release."""
     data = LuaTableParser(saved.read_text(encoding="utf-8", errors="replace")).assignments()
     harvest = data.get("GearGuideHarvest") or {}
@@ -286,7 +286,7 @@ def collect(saved: Path, corrections: Path = CORRECTIONS, include_learned: bool 
     credits = None
     if questie:
         from import_questie import merge_sources, questie_version
-        touched, added = merge_sources(items, questie)
+        touched, added = merge_sources(items, questie, chances)
         questie_ver = questie_version(questie)
         print(f"Questie sources (QuestieDB {questie_ver}): {added} sources added to {touched} items")
         credits = "Item sources include data from the Questie project's database (GPL-3.0)"

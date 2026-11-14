@@ -438,27 +438,38 @@ def _quest_giver_location(store, zones, qid):
     return None
 
 
-def item_sources(store: QuestieStore, iid: int, zones: ZoneData | None = None) -> list[dict]:
+def item_sources(store: QuestieStore, iid: int, zones: ZoneData | None = None,
+                 chances: dict | None = None) -> list[dict]:
+    """chances (optional, from import_cmangos.drop_chances): adds "dc" (drop chance %) to drop
+    sources and lists the creatures with the best chance first."""
     if not store.row("Item", iid):
         return []
     zones = zones or ZoneData(store.dir)
     out: list[dict] = []
+    npc_dc = lambda nid: ((chances or {}).get("npc", {}).get(nid) or {}).get(iid)
 
     npcs = id_list(store.field("Item", iid, ITEM_NPC_DROPS))
+    if chances:
+        npcs.sort(key=lambda nid: -(npc_dc(nid) or 0))  # stable: unknown chances keep Questie's order
     for nid in npcs[:MAX_DROP_NPCS]:
         src = _npc_source(store, zones, "drop", nid)
         if src:
+            src["dc"] = npc_dc(nid)
             out.append(src)
     if len(npcs) > MAX_DROP_NPCS:
         out.append({"t": "drop", "n": f"... and {len(npcs) - MAX_DROP_NPCS} more creatures"})
 
     chests: dict[str, list] = {}
+    chest_dc: dict[str, float] = {}
     for oid in id_list(store.field("Item", iid, ITEM_OBJECT_DROPS)):
         name = store.name("Object", oid)
         if name:
             chests.setdefault(name, []).append(location(zones, store.field("Object", oid, OBJECT_SPAWNS)))
+            dc = ((chances or {}).get("object", {}).get(oid) or {}).get(iid)
+            if dc:  # same-named chests can differ (e.g. by zone): show the best one
+                chest_dc[name] = max(dc, chest_dc.get(name, 0))
     for name, locs in sorted(chests.items(), key=lambda kv: -len(kv[1]))[:MAX_CHEST_KINDS]:
-        out.append({"t": "drop", "n": name, "loc": merge_locations(locs), "k": "object"})
+        out.append({"t": "drop", "n": name, "loc": merge_locations(locs), "k": "object", "dc": chest_dc.get(name)})
 
     for cid in id_list(store.field("Item", iid, ITEM_ITEM_DROPS))[:MAX_SOURCES_PER_KIND]:
         name = store.name("Item", cid)
@@ -565,22 +576,62 @@ def infer_sources(items: dict[int, dict], store: QuestieStore, zones: ZoneData) 
     return counts
 
 
-def merge_sources(items: dict[int, dict], questie_path: Path) -> tuple[int, int]:
-    """Adds Questie sources to GearGuide items in place. Returns (items with new sources, sources added)."""
+CMANGOS_MAX_DROPPERS = 10  # more creatures than this = a world drop: too vague to list
+CMANGOS_MIN_CHANCE = 1.0   # % (the best creature's chance)
+
+
+def add_cmangos_drops(items: dict[int, dict], store: QuestieStore, zones: ZoneData, chances: dict) -> int:
+    """Items still without a source: the creatures cmangos' loot tables say drop them (boss and
+    named-mob loot that Questie's item list misses), named and placed on the map through Questie's
+    creature data. Only specific drops, not world drops. Returns how many items got one."""
+    by_item: dict[int, list[tuple[float, int]]] = {}
+    for nid, found in chances.get("npc", {}).items():
+        for iid, pct in found.items():
+            if iid in items and not items[iid].get("src"):
+                by_item.setdefault(iid, []).append((pct, nid))
+    n = 0
+    for iid, droppers in by_item.items():
+        if len(droppers) > CMANGOS_MAX_DROPPERS or max(droppers)[0] < CMANGOS_MIN_CHANCE:
+            continue
+        out = []
+        for pct, nid in sorted(droppers, reverse=True):
+            src = _npc_source(store, zones, "drop", nid)
+            if src:
+                src["dc"] = pct
+                out.append({k: v for k, v in src.items() if v is not None})
+        if out:
+            items[iid]["src"] = out
+            n += 1
+    return n
+
+
+def merge_sources(items: dict[int, dict], questie_path: Path, chances: dict | None = None) -> tuple[int, int]:
+    """Adds Questie sources to GearGuide items in place. Returns (items with new sources, sources added).
+    chances: optional drop chances (import_cmangos.drop_chances), also added to matching known sources."""
     store = QuestieStore(find_toc(questie_path))
     zones = ZoneData(store.dir)
     touched = added = 0
     for iid, rec in items.items():
-        new = item_sources(store, iid, zones)
+        new = item_sources(store, iid, zones, chances)
         if not new:
             continue
         have = rec.setdefault("src", [])
-        seen = {(s.get("t"), s.get("n")) for s in have}
-        fresh = [s for s in new if (s.get("t"), s.get("n")) not in seen]
+        known = {(s.get("t"), s.get("n")): s for s in have if isinstance(s, dict)}
+        for s in new:
+            old = known.get((s.get("t"), s.get("n")))
+            if old is not None and s.get("dc") and not old.get("dc"):
+                old["dc"] = s["dc"]
+        fresh = [s for s in new if (s.get("t"), s.get("n")) not in known]
         if fresh:
             have.extend(fresh)
             touched += 1
             added += len(fresh)
+        if chances:  # best drop chance first (stable: everything else keeps its order)
+            have.sort(key=lambda s: -(s.get("dc") or 0) if isinstance(s, dict) else 0)
+    if chances:
+        found = add_cmangos_drops(items, store, zones, chances)
+        if found:
+            print(f"Drop sources from cmangos for items Questie has none for: {found} items")
     inferred = infer_sources(items, store, zones)
     if inferred:
         print("Inferred sources for items without one: "

@@ -199,11 +199,14 @@ function ns:GetSources(id)
     if dbItem and dbItem.src then
         -- Format 2 stores each source once in GearGuide_Data.sources; items hold indices.
         local pool, locs, resolved = GearGuide_Data.sources, GearGuide_Data.locs, {}
-        for _, s in ipairs(dbItem.src) do
+        for i, s in ipairs(dbItem.src) do
             if type(s) == "number" then s = pool and pool[s] end
             if type(s) == "table" then
-                if s.l and locs and locs[s.l] and not s.loc then
-                    s = { t = s.t, n = s.n, z = s.z, k = s.k, f = s.f, loc = locs[s.l] }  -- format 3: map location
+                -- dc[i]: drop chance (%) of this item from source i (the pooled source is shared).
+                local dc = type(dbItem.dc) == "table" and dbItem.dc[i] or nil
+                if dc == 0 then dc = nil end
+                if (s.l and locs and locs[s.l] and not s.loc) or dc then
+                    s = { t = s.t, n = s.n, z = s.z, k = s.k, f = s.f, loc = s.loc or (s.l and locs and locs[s.l]), dc = dc }
                 end
                 resolved[#resolved + 1] = s
             end
@@ -310,10 +313,22 @@ function ns.ZoneName(z)
     return zoneNames[z] or nil
 end
 
+-- Drop chance in % -> "20%", "2.5%", "0.35%", "<0.1%".
+function ns.FormatChance(pct)
+    local text
+    if pct >= 10 then text = string.format("%.0f", pct)
+    elseif pct >= 1 then text = string.format("%.1f", pct)
+    elseif pct >= 0.1 then text = string.format("%.2f", pct)
+    else return "<0.1%" end
+    text = text:gsub("(%.%d-)0+$", "%1"):gsub("%.$", "")  -- 2.50 -> 2.5, 3.0 -> 3
+    return text .. "%"
+end
+
 function ns.FormatSource(s)
     local text = (SOURCE_LABELS[s.t] or s.t or "?") .. ": " .. (s.n or "?")
     local zone = ns.ZoneName(s.z)
     if zone and zone ~= "" then text = text .. " (" .. zone .. ")" end
+    if s.dc then text = text .. " |cffffd100" .. ns.FormatChance(s.dc) .. "|r" end
     if s.price then text = text .. " |cffffffff- " .. ns.FormatPrice(s.price) .. "|r" end
     if s.shared then text = text .. " |cff888888(shared by players)|r" end
     if s.k == "guess" then text = text .. " |cff888888(likely)|r" end

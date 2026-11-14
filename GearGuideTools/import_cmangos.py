@@ -117,6 +117,104 @@ def merge_prices(items: dict[int, dict], prices: dict[int, int], ranks: dict[int
     return n
 
 
+# ----------------------------------------------------------------------------- drop chances
+DROP_CREDITS = "Drop chances are from the cmangos classic-db project (GPL-3.0)"
+CHEST = 3  # gameobject_template.type of chests; data1 is their loot id
+
+
+class _Loot:
+    """Chance of each item dropping from one loot entry, following cmangos' loot rules:
+    - rows outside a group roll on their own (ChanceOrQuestChance %; negative = quest drop),
+    - each group (groupid > 0) yields at most one item: the rows with a chance roll first, the
+      rows with chance 0 share what's left equally,
+    - a negative mincountOrRef points at reference_loot_template, rolled maxcount times."""
+
+    def __init__(self, tables: dict[str, list[dict]]):
+        self.by_entry: dict[str, dict[int, list[dict]]] = {}
+        for name, rows in tables.items():
+            idx = self.by_entry.setdefault(name, {})
+            for r in rows:
+                idx.setdefault(r["entry"], []).append(r)
+        self._refs: dict[int, dict[int, float]] = {}
+
+    def chances(self, table: str, entry: int, _depth: int = 0) -> dict[int, float]:
+        """{item id: probability (0-1) that at least one drops} for one kill/chest of `entry`."""
+        if table == "reference_loot_template" and entry in self._refs:
+            return self._refs[entry]
+        rows = self.by_entry.get(table, {}).get(entry, [])
+        miss: dict[int, float] = {}  # item -> probability that it does NOT drop
+
+        def add(row, picked: float):
+            ref = row.get("mincountOrRef") or 0
+            if ref < 0:
+                if _depth > 8:
+                    return
+                times = max(1, row.get("maxcount") or 1)
+                for iid, q in self.chances("reference_loot_template", -ref, _depth + 1).items():
+                    p = picked * (1 - (1 - q) ** times)
+                    miss[iid] = miss.get(iid, 1.0) * (1 - p)
+            elif row.get("item"):
+                miss[row["item"]] = miss.get(row["item"], 1.0) * (1 - picked)
+
+        groups: dict[int, list[dict]] = {}
+        for r in rows:
+            if r.get("groupid"):
+                groups.setdefault(r["groupid"], []).append(r)
+            else:
+                add(r, min(100.0, abs(r.get("ChanceOrQuestChance") or 0)) / 100)
+        for members in groups.values():
+            explicit = [r for r in members if r.get("ChanceOrQuestChance")]
+            equal = [r for r in members if not r.get("ChanceOrQuestChance")]
+            used = sum(abs(r["ChanceOrQuestChance"]) for r in explicit)
+            for r in explicit:
+                add(r, min(100.0, abs(r["ChanceOrQuestChance"])) / 100)
+            if equal:
+                share = max(0.0, 100.0 - used) / 100 / len(equal)
+                for r in equal:
+                    add(r, share)
+        out = {iid: 1 - m for iid, m in miss.items() if m < 1}
+        if table == "reference_loot_template":
+            self._refs[entry] = out
+        return out
+
+
+def drop_chances(path: Path, wanted: set[int] | None = None) -> dict[str, dict[int, dict[int, float]]]:
+    """{"npc": {creature id: {item id: %}}, "object": {gameobject id: {item id: %}}} from a cmangos
+    dump. Only items in `wanted` (all when None) are kept."""
+    t = read_tables(path, {"creature_template", "gameobject_template", "creature_loot_template",
+                           "gameobject_loot_template", "reference_loot_template"})
+    loot = _Loot({k: t[k] for k in ("creature_loot_template", "gameobject_loot_template", "reference_loot_template")})
+    out: dict[str, dict[int, dict[int, float]]] = {"npc": {}, "object": {}}
+
+    def keep(kind, eid, table, loot_id):
+        if not loot_id:
+            return
+        found = {iid: round(p * 100, 3) for iid, p in loot.chances(table, loot_id).items()
+                 if (wanted is None or iid in wanted) and p > 0}
+        if found:
+            out[kind][eid] = found
+
+    for r in t["creature_template"]:
+        keep("npc", r.get("Entry"), "creature_loot_template", r.get("LootId"))
+    for r in t["gameobject_template"]:
+        if r.get("type") == CHEST:
+            keep("object", r.get("entry"), "gameobject_loot_template", r.get("data1"))
+    return out
+
+
+def format_chance(pct: float) -> str:
+    return f"{pct:.0f}%" if pct >= 10 else f"{pct:.1f}%" if pct >= 1 else f"{pct:.2f}%" if pct >= 0.1 else "<0.1%"
+
+
 if __name__ == "__main__":
-    p = buy_prices(Path(sys.argv[1]))
-    print(f"{len(p)} vendor items with a gold price")
+    path = Path(sys.argv[1])
+    if len(sys.argv) > 2:  # import_cmangos.py dump.sql ITEM_ID ... : drop chances for these items
+        ids = {int(a) for a in sys.argv[2:]}
+        dc = drop_chances(path, ids)
+        for kind, by in dc.items():
+            for eid, found in by.items():
+                for iid, pct in found.items():
+                    print(f"item {iid}: {kind} {eid} {format_chance(pct)}")
+    else:
+        p = buy_prices(path)
+        print(f"{len(p)} vendor items with a gold price")

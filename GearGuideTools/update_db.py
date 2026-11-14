@@ -391,6 +391,7 @@ API_HEADER = [
 
 # 2 = item.src holds indices into GearGuide_Data.sources
 # 3 = a source may also hold "l", an index into GearGuide_Data.locs (map locations for the world map)
+#     item.dc (optional) holds drop chances in %, item.dc[i] for item.src[i] (0 = unknown)
 DB_FORMAT = 3
 SOURCE_KEYS = ("t", "n", "z", "l", "k", "f")  # f = "A"/"H" for faction-only sources
 
@@ -419,7 +420,7 @@ def intern_sources(items: dict[int, dict]) -> tuple[list[dict], list[list]]:
     locs: list[list] = []
     loc_index: dict[str, int] = {}
     for iid in sorted(items):
-        refs = []
+        refs, chances = [], []
         for s in items[iid].get("src") or []:
             if not isinstance(s, dict):
                 continue
@@ -436,10 +437,17 @@ def intern_sources(items: dict[int, dict]) -> tuple[list[dict], list[list]]:
                 index[key] = len(pool)
             if index[key] not in refs:
                 refs.append(index[key])
+                chances.append(s.get("dc") or 0)
         if refs:
             items[iid]["src"] = refs
         else:
             items[iid].pop("src", None)
+        # Drop chances depend on the item, so they stay with it (item.dc[i] belongs to item.src[i])
+        # and the source pool stays shared.
+        if any(chances):
+            items[iid]["dc"] = chances
+        else:
+            items[iid].pop("dc", None)
     return pool, locs
 
 

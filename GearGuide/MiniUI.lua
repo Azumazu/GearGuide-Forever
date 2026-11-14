@@ -87,7 +87,9 @@ end
 local SOURCE_PREFIX = { vendor = "Vendor: ", quest = "Quest: ", craft = "Crafted: " }
 local function zoneSourceText(src)
     if type(src) ~= "table" then return "" end
-    return (SOURCE_PREFIX[src.t] or "") .. (src.n or "?")
+    local text = (SOURCE_PREFIX[src.t] or "") .. (src.n or "?")
+    if src.dc then text = text .. " " .. ns.FormatChance(src.dc) end
+    return text
 end
 
 ---------------------------------------------------------------------------
