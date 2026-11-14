@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.11.2 (2026-11-14)
+
+- Item tooltips in the main window open beside the mouse cursor, on the side with more room, and
+  follow it along the row (they used to appear wherever the last tooltip had been).
+
 ## 0.11.1 (2026-11-13)
 
 - Mini tracker hover mode (and 0% background opacity) now also hides the frame's border.

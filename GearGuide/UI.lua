@@ -429,7 +429,7 @@ end
 
 local function rowOnEnter(row, d)
     if d.kind == "item" then
-        ns:ShowItemTooltip(row, d.id, { score = d.score, delta = d.delta, class = d.class, anchor = "ANCHOR_NONE" })
+        ns:ShowItemTooltip(row, d.id, { score = d.score, delta = d.delta, class = d.class, cursor = true })
         placeTooltipBesideWindow(row)
     elseif d.kind == "header" and d.equippedLink then
         GameTooltip:SetOwner(row, "ANCHOR_NONE")
