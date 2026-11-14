@@ -2,7 +2,7 @@
 """
 Uploads a GearGuide release zip to CurseForge through its author upload API.
 
-Needs (environment variables, never commit them):
+Needs (environment variables, or KEY=value lines in the git-ignored .env at the project root):
   CF_API_TOKEN   - CurseForge API token (CurseForge author settings -> API tokens)
   CF_PROJECT_ID  - numeric project ID (shown on the project's page in the author console)
 
@@ -29,6 +29,18 @@ sys.path.insert(0, str(HERE))
 import package  # noqa: E402
 
 API = "https://wow.curseforge.com/api"
+ENV_FILE = HERE.parent / ".env"  # KEY=value lines; git-ignored, never committed
+
+
+def load_env_file(path: Path = ENV_FILE) -> None:
+    """Fills missing environment variables from the project's .env file (real ones win)."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
 def request(method: str, url: str, token: str, body: bytes | None = None, ctype: str | None = None):
@@ -70,6 +82,7 @@ def main() -> int:
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
 
+    load_env_file()
     token = os.environ.get("CF_API_TOKEN")
     project = os.environ.get("CF_PROJECT_ID")
     if not token:
