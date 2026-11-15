@@ -130,6 +130,78 @@ function ns:ItemFromLink(link)
 end
 
 ---------------------------------------------------------------------------
+-- Random variants ("Cross Dagger of the Falcon"): the same item id with a random bonus. The bonus
+-- (suffix id) is the 7th field of the link: item:id:enchant:gem1:gem2:gem3:gem4:suffix:...
+---------------------------------------------------------------------------
+function ns.LinkSuffix(link)
+    if type(link) ~= "string" then return nil end
+    local s = tonumber(link:match("item:%-?%d+:[^:|]*:[^:|]*:[^:|]*:[^:|]*:[^:|]*:(%-?%d+)"))
+    if s and s ~= 0 then return s end
+end
+
+function ns.VariantLink(id, suffix)
+    return "item:" .. id .. ":0:0:0:0:0:" .. suffix
+end
+
+-- { { p = suffix id, c = chance % (nil: only seen in game) }, ... }: the shipped group, most likely
+-- first (Data.lua R[item.rg] = { suffix, chance, ... }), then suffixes players looted that it lacks.
+function ns:GetVariants(id)
+    local out, seen = {}, {}
+    local db = GearGuide_Data.items[id]
+    local group = db and db.rg and GearGuide_Data.randoms and GearGuide_Data.randoms[db.rg]
+    if group then
+        for i = 1, #group - 1, 2 do
+            out[#out + 1] = { p = group[i], c = group[i + 1] }
+            seen[group[i]] = true
+        end
+    end
+    local learned = GearGuideLearned and GearGuideLearned.variants and GearGuideLearned.variants[id]
+    if learned then
+        local extra = {}
+        for p in pairs(learned) do if not seen[p] then extra[#extra + 1] = p end end
+        table.sort(extra)
+        for _, p in ipairs(extra) do out[#out + 1] = { p = p } end
+    end
+    return out
+end
+
+function ns:RememberVariant(id, suffix)
+    if not (id and suffix and GearGuideLearned) then return end
+    GearGuideLearned.variants = GearGuideLearned.variants or {}
+    local v = GearGuideLearned.variants[id] or {}
+    GearGuideLearned.variants[id] = v
+    v[suffix] = true
+end
+
+-- Name ("Cross Dagger of the Falcon"), suffix ("of the Falcon"), total stats and the bonus over the
+-- base item, all from the game client. nil while the client doesn't have the item yet.
+local variantCache = {}
+function ns:VariantInfo(id, suffix)
+    local key = id .. ":" .. suffix
+    if variantCache[key] then return variantCache[key] end
+    local link = ns.VariantLink(id, suffix)
+    local name
+    if C_TooltipInfo and C_TooltipInfo.GetHyperlink then  -- the tooltip title carries the suffix
+        local ok, data = pcall(C_TooltipInfo.GetHyperlink, link)
+        local line = ok and type(data) == "table" and data.lines and data.lines[1]
+        name = line and ns.Plain(line.leftText)
+    end
+    name = name or ns.GetItemInfo(link)
+    local baseName = ns.GetItemInfo(id)
+    if not name or not baseName then return nil end
+    local st, base = ns.ReadStats(link), ns.ReadStats("item:" .. id)
+    local bonus = {}
+    for k, v in pairs(st) do
+        local d = v - (base[k] or 0)
+        if d ~= 0 then bonus[k] = d end
+    end
+    local sfx = name:sub(1, #baseName) == baseName and name:sub(#baseName + 2) or ""
+    local info = { name = name, suffix = sfx ~= "" and sfx or nil, st = st, bonus = bonus, link = link }
+    variantCache[key] = info
+    return info
+end
+
+---------------------------------------------------------------------------
 -- Item access: generated database merged with items learned in game
 ---------------------------------------------------------------------------
 -- Three layers: items scanned from this game client (newest), the shipped/generated Data.lua,
@@ -227,6 +299,7 @@ function ns:GetSources(id)
             -- Learned/shared drops from a creature that isn't in the item's known loot table are
             -- misattributed (older versions credited container loot to the targeted creature).
             local plausible = not (knownDroppers and s.t == "drop" and not knownDroppers[s.n or ""])
+                and not (ns.IsJunkSourceName and ns.IsJunkSourceName(s.n))  -- nameless finds of older versions
             if mine and plausible and not seen[key] then seen[key] = true; out[#out + 1] = s end
         end
     end
@@ -956,8 +1029,11 @@ SlashCmdList.GEARGUIDE = function(msg)
     elseif cmd == "forget" then
         GearGuideLearned.items, GearGuideLearned.sources, GearGuideLearned.prices = {}, {}, {}
         GearGuideLearned.spots, GearGuideLearned.spotZones = {}, {}
+        GearGuideLearned.shared, GearGuideLearned.variants = {}, {}
         ns:InvalidateItems()
-        ns.Print("Forgot all items and sources learned in game.")
+        if ns.InvalidateSpotNames then ns:InvalidateSpotNames() end
+        ns:RequestRefresh()
+        ns.Print("Forgot all items, sources and variants learned in game or shared by other players.")
     else
         ns.Print("Commands: /gg (toggle window), /gg browse, /gg rec, /gg settings, /gg mini [count|auto|hover|opacity 0-100|scale 60-160], /gg minimap, "
             .. "/gg spec [name], /gg range <below> <above>, /gg sharing [on|off], /gg unknown [on|off], /gg ej, /gg scan [pause|status|reset|full|extend], /gg status, /gg unmark, /gg forget")

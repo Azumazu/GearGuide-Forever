@@ -209,8 +209,9 @@ local function receive(message, sender)
                 end
                 if found then
                     found.c = math.min((found.c or 1) + 1, 99)
-                elseif #list < 12 then
+                elseif #list < 12 and not (ns.IsJunkSourceName and ns.IsJunkSourceName(src.n)) then
                     list[#list + 1] = { t = src.t, n = src.n, z = src.z, c = 1 }
+                    ns:RequestRefresh()  -- a first source can make the item listable
                 end
             end
         end

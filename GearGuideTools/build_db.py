@@ -27,6 +27,11 @@ from update_db import apply_corrections, hide_by_source, write_lua, CORRECTIONS 
 DEFAULT_OUT = HERE.parent / "GearGuide" / "Data.lua"
 MAX_LEVEL = 60
 MIN_SHARED_REPORTS = 2  # sources from other players need this many independent reports to ship
+JUNK_NAMES = {"", "?", "Unknown", "Container"}  # learned before the client knew the name / opened containers
+
+
+def real_source(s) -> bool:
+    return isinstance(s, dict) and isinstance(s.get("n"), str) and s["n"].strip() not in JUNK_NAMES
 # Items in the client's table that players never get: NPC weapons, test, placeholder and retired items.
 EXCLUDE_NAME = re.compile(r"^Monster - |^zz|^OLD|(?i:\btest(?:ing)?\b|qatest)|DELETE ME|Deprecated|DEPRECATED|\[PH\]|\(OLD\)|\bOLD\b|UNUSED|Unused|\bQA\b|DEBUG")
 KEEP_FIELDS = ("n", "q", "il", "rl", "eq", "c", "sc", "st", "cls", "u", "r")  # r = random enchantment
@@ -304,7 +309,7 @@ def collect(saved: Path, corrections: Path = CORRECTIONS, include_learned: bool 
                 items[int(iid)] = {k: rec[k] for k in KEEP_FIELDS if rec.get(k) not in (None, {}, [])}
         for iid, srcs in as_dict(learned.get("sources")).items():
             if int(iid) in items and isinstance(srcs, list) and srcs:
-                items[int(iid)]["src"] = [s for s in srcs if isinstance(s, dict)]
+                items[int(iid)]["src"] = [s for s in srcs if real_source(s)]
         # Vendor prices seen in game -> item["vp"] = {vendor: {g: copper, c: [{n, q, i}, ...]}}
         priced = 0
         for iid, by_vendor in as_dict(learned.get("prices")).items():
@@ -322,7 +327,7 @@ def collect(saved: Path, corrections: Path = CORRECTIONS, include_learned: bool 
             have = items[int(iid)].setdefault("src", [])
             seen = {(s.get("t"), s.get("n")) for s in have}
             for s in srcs:
-                if isinstance(s, dict) and (s.get("c") or 0) >= MIN_SHARED_REPORTS and (s.get("t"), s.get("n")) not in seen:
+                if real_source(s) and (s.get("c") or 0) >= MIN_SHARED_REPORTS and (s.get("t"), s.get("n")) not in seen:
                     have.append({k: s[k] for k in ("t", "n", "z") if s.get(k) is not None})
                     trusted += 1
         if trusted:

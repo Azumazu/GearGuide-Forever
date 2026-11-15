@@ -22,5 +22,14 @@
         "z": "Duskwood"
       }
     ]
+  },
+  "2819": {
+    "src+": [
+      {
+        "t": "drop",
+        "n": "Nightbane Dark Runner",
+        "z": "Duskwood"
+      }
+    ]
   }
 }

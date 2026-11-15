@@ -58,10 +58,12 @@ def make_zip(ver: str | None = None) -> Path:
     ver = ver or version()
     RELEASES.mkdir(exist_ok=True)
     path = RELEASES / f"GearGuide-{ver}.zip"
-    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+    tmp = path.with_suffix(".zip.tmp")
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
         for f in sorted(ADDON.rglob("*")):
             if f.is_file() and not f.name.endswith(SKIP_SUFFIXES):
                 z.write(f, Path("GearGuide") / f.relative_to(ADDON))
+    tmp.replace(path)
     return path
 
 

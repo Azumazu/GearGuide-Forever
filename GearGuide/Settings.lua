@@ -282,7 +282,7 @@ function ns:CreateSettingsPanel(parent)
             if v then ns:SetCustomWeight(stat, v) end
             self:SetText(fmtWeight(custom() and custom().weights[stat]))
         end
-        eb:HookScript("OnEnterPressed", apply)
+        -- Enter leaves the box (Skin:EditBox), and leaving applies: one apply, not two re-reading the rounded text.
         eb:HookScript("OnEditFocusLost", apply)
         local c = { box = eb }
         function c:Sync()

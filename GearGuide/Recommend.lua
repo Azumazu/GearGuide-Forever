@@ -11,7 +11,8 @@ function ns:GetScoringContext(class, specKey)
     end
     local spec = self:GetSpecInfo(class, specKey)
     local weights
-    if self:IsCustomWeights() and class == self:GetPlayerClass() and specKey == self:GetPlayerSpec() then
+    local custom = self:IsCustomWeights() and class == self:GetPlayerClass() and specKey == self:GetPlayerSpec()
+    if custom then
         -- A copy: Score caches derived tables by identity, and the saved table changes in place.
         weights = {}
         for k, v in pairs(GearGuideCharDB.custom.weights) do weights[k] = v end
@@ -19,7 +20,8 @@ function ns:GetScoringContext(class, specKey)
         weights = self:GetWeights(class, specKey, UnitLevel("player"))
     end
     return weights,
-        { class = class, spec = spec and spec.key, role = spec and spec.role or "MELEE", level = UnitLevel("player") }
+        { class = class, spec = spec and spec.key, role = spec and spec.role or "MELEE", level = UnitLevel("player"),
+          custom = custom or nil }  -- custom: the player's own stat weights (Settings) are in use
 end
 
 -- Best `n` picks across all slots, biggest upgrade first (used by the mini UI).

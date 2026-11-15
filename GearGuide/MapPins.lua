@@ -269,7 +269,7 @@ end
 ns.MapPinPoints = pinPoints  -- (tests)
 
 local function startWatcher()
-    if watcher then return end
+    if watcher then watcher:Show() return end
     watcher = CreateFrame("Frame")
     local elapsed = 0
     watcher:SetScript("OnUpdate", function(_, dt)
@@ -296,7 +296,7 @@ local function setWaypoint(mapID, p, title)
     if C_Map and C_Map.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates then
         local can = not C_Map.CanSetUserWaypointOnMap or C_Map.CanSetUserWaypointOnMap(mapID)
         if can then
-            pcall(C_Map.SetUserWaypoint, UiMapPoint.CreateFromCoordinates(mapID, p.x, p.y))
+            ns.ownWaypoint = pcall(C_Map.SetUserWaypoint, UiMapPoint.CreateFromCoordinates(mapID, p.x, p.y))
             if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
                 pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, true)
             end
@@ -357,5 +357,8 @@ end
 function ns:ClearMapPins()
     active = nil
     hideAll()
-    if C_Map and C_Map.ClearUserWaypoint then pcall(C_Map.ClearUserWaypoint) end
+    if watcher then watcher:Hide() end  -- nothing to redraw until the next map click
+    -- Only a waypoint GearGuide set: the player's own one stays.
+    if ns.ownWaypoint and C_Map and C_Map.ClearUserWaypoint then pcall(C_Map.ClearUserWaypoint) end
+    ns.ownWaypoint = nil
 end

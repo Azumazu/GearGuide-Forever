@@ -213,6 +213,8 @@ function ns:PreviewGearToast()
     end
     id = id or self:AllItemIds()[1]
     if not id then return end
+    -- A real pop-up on screen goes back to the front of the queue instead of being lost.
+    if showing and frame.itemID and not frame.preview then table.insert(queue, 1, frame.itemID) end
     showing = true
     frame.itemID = id
     frame.elapsed = 0

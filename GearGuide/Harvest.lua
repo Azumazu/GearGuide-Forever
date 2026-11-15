@@ -318,7 +318,6 @@ function ns:AutoScanIfEmpty()
     self:StartScan()
 end
 
--- Called by Core at PLAYER_LOGIN: resume an interrupted scan, or start the first one.
 ---------------------------------------------------------------------------
 -- Provisional items: raid loot the build added from cmangos without stats (Data.lua pv = 1).
 -- Each one is asked from the client in the background; the client's record (WoW: Forever's real
@@ -369,6 +368,7 @@ function ns:VerifyProvisional()
     end)
 end
 
+-- Called by Core at PLAYER_LOGIN: resume an interrupted scan, or start the first one.
 function ns:InitHarvest()
     C_Timer.After(20, function() ns:VerifyProvisional() end)
     local s = S()

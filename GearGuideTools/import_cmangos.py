@@ -125,6 +125,44 @@ def merge_prices(items: dict[int, dict], prices: dict[int, int], ranks: dict[int
     return n
 
 
+# ----------------------------------------------------------------------------- random variants
+def random_variants(path: Path) -> tuple[dict[int, int], dict[int, list]]:
+    """({item id: random property group}, {group: [suffix id, chance %, suffix id, chance %, ...]}).
+
+    Items like "Cross Dagger" drop as "...of the Falcon", "...of the Monkey" etc.: item_template.RandomProperty
+    names a group, item_enchantment_template lists the group's suffixes (ItemRandomProperties ids, the
+    7th field of an item link) with their chances. Names and stats aren't taken from here: the game
+    client returns them for a link carrying the suffix id."""
+    t = read_tables(path, {"item_template", "item_enchantment_template"})
+    groups: dict[int, list[tuple[int, float]]] = {}
+    for r in t["item_enchantment_template"]:
+        if isinstance(r.get("entry"), int) and isinstance(r.get("ench"), int):
+            groups.setdefault(r["entry"], []).append((r["ench"], float(r.get("chance") or 0)))
+    item_group = {r["entry"]: r["RandomProperty"] for r in t["item_template"]
+                  if r.get("RandomProperty") and r["RandomProperty"] in groups}
+    flat = {}
+    for g, entries in groups.items():
+        # cmangos chances don't always add up to 100 (131 groups go over): show each as its share.
+        total = sum(c for _, c in entries) or 1
+        entries = [(p, c * 100 / total) for p, c in entries]
+        entries.sort(key=lambda e: (-e[1], e[0]))  # most likely first
+        flat[g] = [x for p, c in entries for x in (p, round(c, 2))]
+    return item_group, flat
+
+
+def merge_variants(items: dict[int, dict], item_group: dict[int, int], groups: dict[int, list]) -> dict[int, list]:
+    """Sets item["rg"] on items with random variants; returns the groups those items use."""
+    used = {}
+    for iid, rec in items.items():
+        g = item_group.get(iid)
+        if g:
+            rec["rg"] = g
+            used[g] = groups[g]
+        else:
+            rec.pop("rg", None)
+    return used
+
+
 # ----------------------------------------------------------------------------- drop chances
 DROP_CREDITS = "Drop chances are from the cmangos classic-db project (GPL-3.0)"
 CHEST = 3  # gameobject_template.type of chests; data1 is their loot id

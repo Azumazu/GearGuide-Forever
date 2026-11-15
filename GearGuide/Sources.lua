@@ -7,7 +7,15 @@ local _, ns = ...
 local MAX_SOURCES_PER_ITEM = 10
 local pending = {}  -- itemID -> { link, src } waiting for the client to cache item info
 
+-- Names that aren't a real source: the client hadn't loaded the creature's name yet, or an
+-- opened container. Never stored (older versions did; they are hidden when read back too).
+local JUNK_NAMES = { [""] = true, ["?"] = true, ["Unknown"] = true, ["Container"] = true }
+function ns.IsJunkSourceName(n)
+    return type(n) ~= "string" or JUNK_NAMES[n] or (UNKNOWNOBJECT and n == UNKNOWNOBJECT) or false
+end
+
 local function addSource(id, src)
+    if ns.IsJunkSourceName(src.n) then return false end
     local list = GearGuideLearned.sources[id]
     if not list then
         list = {}
@@ -28,7 +36,13 @@ function ns:LearnLink(link, src)
     if not id then return end
     local item = self:GetItem(id)
     if not item then
-        item = self:BuildFullRecord(link)
+        -- Not gear (cloth, potions...): stop before the full record and tooltip scan.
+        local instant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+        local equip = instant and select(4, instant(id))
+        if equip ~= nil and not ns.EQUIPLOC_GROUP[equip] then return end
+        -- The base item (no random bonus): a looted "...of the Falcon" link would store that
+        -- variant's name and stats as the item's own.
+        item = self:BuildFullRecord("item:" .. id)
         if not item then
             pending[id] = { link = link, src = src }  -- retried on GET_ITEM_INFO_RECEIVED
             return
@@ -37,12 +51,14 @@ function ns:LearnLink(link, src)
         GearGuideLearned.items[id] = item
         self:InvalidateItems()
     end
-    if src and src.t == "drop" and ns.InvalidateSpotNames then ns:InvalidateSpotNames() end
+    -- A random variant ("...of the Falcon") is credited to the base item; its bonus is remembered.
+    self:RememberVariant(id, ns.LinkSuffix(link))
     -- A creature nobody listed yet for this item (shipped data, own or shared finds): announce it.
     local fresh = src and src.t == "drop" and src.n and src.n ~= "Container" and not self:ListsDropper(id, src.n)
-    if src and addSource(id, src) and ns.QueueShare then
-        ns:QueueShare(id, src)  -- share first-time sightings (unless the player opted out)
-    end
+    if not (src and addSource(id, src)) then return end
+    if src.t == "drop" and ns.InvalidateSpotNames then ns:InvalidateSpotNames() end
+    if ns.QueueShare then ns:QueueShare(id, src) end  -- share first-time sightings (unless opted out)
+    if self.RequestRefresh then self:RequestRefresh() end  -- an item's first source can make it listable
     -- Only if it's really listed now (GetSources hides misattributed drops from known loot tables).
     if fresh and self:ListsDropper(id, src.n) then self:AnnounceNewDrop(id, link) end
 end
@@ -69,7 +85,7 @@ function ns:AnnounceNewDrop(id, link)
 end
 
 local function zone()
-    return GetRealZoneText() or ""
+    return ns.Plain(GetRealZoneText()) or ""
 end
 
 ---------------------------------------------------------------------------
@@ -122,7 +138,7 @@ local function plausibleDrop(link, level)
     if not level or level <= 0 then return true end  -- unknown, or a boss ("??")
     local id = ns.LinkToId(link)
     local item = id and ns:GetItem(id)
-    local _, _, _, _, minLevel = GetItemInfo(link)
+    local _, _, _, _, minLevel = ns.GetItemInfo(link)
     local need = (item and item.rl) or minLevel or 0
     return need <= level + 10
 end
@@ -212,12 +228,14 @@ local function traceLoot(i, link, name, level)
     local rawGuid = type(GetLootSourceInfo) == "function" and GetLootSourceInfo(i) or nil
     local guid = Plain(rawGuid)
     local tgt = UnitGUID and UnitGUID("target")
-    ns.Print(string.format("loot %d: %s | source GUID %s (%s) | cached name %s | target GUID %s, %s, dead %s"
+    local kind = GetLootSlotType and show(GetLootSlotType(i)) or "?"
+    local plainLink = Plain(link)
+    ns.Print(string.format("loot %d (type %s): %s | source GUID %s (%s) | cached name %s | target GUID %s, %s, dead %s"
         .. " | -> %s (level %s)%s",
-        i, link or "no link", show(rawGuid), guid and (guid:match("^(%a+)") or "?") or "-",
+        i, kind, link == nil and "no link" or (plainLink or "SECRET link"), show(rawGuid), guid and (guid:match("^(%a+)") or "?") or "-",
         show(guid and nameByGUID[guid]), show(tgt), show(UnitName and UnitName("target")),
         show(UnitIsDead and UnitIsDead("target")), show(name), show(level),
-        (link and name and not plausibleDrop(link, level)) and " | rejected: item level too high" or ""))
+        (plainLink and name and not plausibleDrop(plainLink, level)) and " | rejected: item level too high" or ""))
 end
 
 function ns:ToggleLootTrace()
@@ -225,13 +243,19 @@ function ns:ToggleLootTrace()
     ns.Print("Loot trace " .. (self.lootTrace and "on: loot something, the details print here." or "off."))
 end
 
-local function onLootOpened()
+local function onLootOpened(event)
     local z = zone()
     local spotted = {}
-    for i = 1, GetNumLootItems() do
-        local link = GetLootSlotLink(i)
+    local n = GetNumLootItems()
+    if ns.lootTrace then ns.Print(string.format("%s: %s slot(s)", event or "loot", show(n))) end
+    for i = 1, n do
+        local rawLink = GetLootSlotLink(i)
+        local link = Plain(rawLink)
         local name, level = lootSource(i)
-        if ns.lootTrace then pcall(traceLoot, i, link, name, level) end
+        if ns.lootTrace then
+            local ok, err = pcall(traceLoot, i, rawLink, name, level)
+            if not ok then ns.Print(string.format("loot %d: trace failed (%s)", i, tostring(err))) end
+        end
         if link and name and plausibleDrop(link, level) then
             ns:LearnLink(link, { t = "drop", n = name, z = z })
         end
@@ -387,14 +411,16 @@ end
 
 function ns:EnableLearning()
     local f = CreateFrame("Frame")
-    for _, e in ipairs({ "LOOT_OPENED", "QUEST_DETAIL", "QUEST_COMPLETE", "MERCHANT_SHOW",
+    -- LOOT_READY comes first: with auto loot the items can already be gone by LOOT_OPENED.
+    -- Reading both is harmless (addSource skips what's already learned).
+    for _, e in ipairs({ "LOOT_READY", "LOOT_OPENED", "QUEST_DETAIL", "QUEST_COMPLETE", "MERCHANT_SHOW",
         "GET_ITEM_INFO_RECEIVED", "QUEST_LOG_UPDATE", "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE",
         "PLAYER_TARGET_CHANGED", "UPDATE_MOUSEOVER_UNIT", "NAME_PLATE_UNIT_ADDED" }) do
         safeRegister(f, e)
     end
     f:SetScript("OnEvent", function(_, event, arg1)
-        if event == "LOOT_OPENED" then
-            onLootOpened()
+        if event == "LOOT_READY" or event == "LOOT_OPENED" then
+            onLootOpened(event)
         elseif event == "QUEST_DETAIL" or event == "QUEST_COMPLETE" then
             onQuestRewards()
         elseif event == "QUEST_LOG_UPDATE" then

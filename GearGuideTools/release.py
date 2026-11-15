@@ -73,6 +73,24 @@ def read_shipped(path: Path) -> tuple[dict[int, dict], dict]:
     return items, meta if isinstance(meta, dict) else {}
 
 
+def write_atomic(path: Path, text: str) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+
+
+def read_randoms(path: Path) -> dict[int, list]:
+    """The random variant groups (R[group]={suffix, chance, ...}) of a Data.lua written by write_lua."""
+    if not path.exists():
+        return {}
+    out = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^R\[(\d+)\]=(.*)$", line)
+        if m:
+            out[int(m.group(1))] = LuaTableParser(m.group(2)).value()
+    return out
+
+
 def norm(v):
     """Comparable form: lists/dicts -> sorted tuples, floats rounded."""
     if isinstance(v, dict):
@@ -92,9 +110,9 @@ def diff(old: dict[int, dict], new: dict[int, dict]):
         fields = [f for f in COMPARE_FIELDS if norm(old[iid].get(f)) != norm(new[iid].get(f))]
         if fields:
             changed.append((iid, fields))
-    new_sources = sum(
-        len({norm(s) for s in new[i].get("src") or []} - {norm(s) for s in old.get(i, {}).get("src") or []})
-        for i in new)
+    def names(i, side):
+        return {(s.get("t"), s.get("n")) for s in side.get(i, {}).get("src") or [] if isinstance(s, dict)}
+    new_sources = sum(len(names(i, new) - names(i, old)) for i in new)
     # items whose source list changed in either direction (added, fixed or removed sources)
     sources_changed = [i for i in sorted(set(old) & set(new))
                        if {norm(s) for s in old[i].get("src") or []} != {norm(s) for s in new[i].get("src") or []}]
@@ -219,6 +237,18 @@ def main() -> int:
         if any(r.get("bp") for r in items.values()):
             from import_cmangos import CREDITS as CM_CREDITS
             meta["credits"] = "; ".join(c for c in (meta.get("credits"), CM_CREDITS) if c)
+    # Random variants ("Cross Dagger of the Falcon"): suffix groups from the cmangos dump, else kept
+    # from the shipped Data.lua.
+    if args.cmangos:
+        from import_cmangos import merge_variants, random_variants
+        randoms = merge_variants(items, *random_variants(args.cmangos))
+        print(f"cmangos random variants: {sum(1 for r in items.values() if r.get('rg'))} items, {len(randoms)} groups")
+    else:
+        randoms = read_randoms(DATA)
+        for iid, rec in items.items():
+            g = (old.get(iid) or {}).get("rg")
+            if g in randoms:
+                rec["rg"] = g
     # Where creatures without a known location were found in game (GearGuideLearned.spots).
     from build_db import apply_spots, learned_spots
     placed = apply_spots(items, *learned_spots(saved))
@@ -246,9 +276,16 @@ def main() -> int:
     for iid, fields in changed[:SHOW_NAMES]:
         print(f"    changed: {items[iid].get('n')} ({iid}): {', '.join(fields)}")
 
+    # Random variants: items that gained/lost a group, or whose group's suffixes or chances changed.
+    old_randoms = read_randoms(DATA)
+    variant_items = sorted(iid for iid, rec in items.items()
+                           if norm(rec.get("rg") and randoms.get(rec["rg"]))
+                           != norm((old.get(iid) or {}).get("rg") and old_randoms.get(old[iid]["rg"])))
+    if variant_items:
+        print(f"  random variants changed for {len(variant_items)} items")
     item_changes = bool(added or removed or changed)
     questie_release = questie_updated and bool(sources_changed or new_sources)
-    if not item_changes and not questie_release and not new_prices and not (args.sources and new_sources) and not args.force:
+    if not item_changes and not questie_release and not new_prices and not variant_items and not (args.sources and new_sources) and not args.force:
         print("No confirmed item changes and no QuestieDB source changes: nothing to release. "
               "(--sources releases newly learned sources.)")
         return 0
@@ -259,10 +296,13 @@ def main() -> int:
     toc = TOC.read_text(encoding="utf-8")
     current = re.search(r"^## Version: (\S+)", toc, re.M).group(1)
     version = bump(current, args.bump)
-    TOC.write_text(re.sub(r"^## Version: \S+", f"## Version: {version}", toc, flags=re.M), encoding="utf-8")
 
     meta["version"] = version
-    write_lua(DATA, items, meta, header=HEADER)
+    write_lua(DATA, items, meta, header=HEADER, randoms=randoms)
+    if version == current:
+        # --bump none: the released version's changelog and zip stay as they are.
+        print(f"\nData.lua rebuilt (version {version} unchanged): no changelog entry or zip written.")
+        return 0
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     lines = [f"## {version} ({today})", ""]
@@ -284,12 +324,16 @@ def main() -> int:
             lines.append(f"- Item sources updated from QuestieDB {questie_now} ({len(sources_changed)} items changed)")
         if new_sources:
             lines.append(f"- {new_sources} new item sources")
+        if variant_items:
+            lines.append(f"- Random variants (\"...of the Falcon\" etc.) with their chances for {len(variant_items)} items")
         if new_prices:
             lines.append(f"- Vendor prices for {new_prices} items (cmangos classic-db; prices seen in game take priority)")
     entry = "\n".join(lines) + "\n\n"
     previous = CHANGELOG.read_text(encoding="utf-8") if CHANGELOG.exists() else "# Changelog\n\n"
     head, _, rest = previous.partition("\n\n")
-    CHANGELOG.write_text(head + "\n\n" + entry + rest, encoding="utf-8")
+    write_atomic(CHANGELOG, head + "\n\n" + entry + rest)
+    # The version goes into the TOC last, so a failed run doesn't bump it again on the next try.
+    write_atomic(TOC, re.sub(r"^## Version: \S+", f"## Version: {version}", toc, flags=re.M))
 
     zip_path = package.make_zip(version)
     print(f"\nReleased {version}: {zip_path} ({zip_path.stat().st_size // 1024} KB)")

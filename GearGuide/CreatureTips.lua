@@ -34,10 +34,17 @@ function ns:GetCreatureDrops(name)
     if not shippedIndex then buildShippedIndex() end
     local found = {}
     for id, dc in pairs(shippedIndex[name] or {}) do found[id] = dc end
-    for id, list in pairs(GearGuideLearned and GearGuideLearned.sources or {}) do
-        if not found[id] and type(list) == "table" then
-            for _, s in ipairs(list) do
-                if s.t == "drop" and s.n == name then found[id] = 0 break end
+    -- Own and shared finds, only where the item's source list shows them too (GetSources hides
+    -- drops a known loot table rules out, e.g. raid gear once credited to a boar).
+    for _, store in ipairs({ GearGuideLearned and GearGuideLearned.sources, GearGuideLearned and GearGuideLearned.shared }) do
+        for id, list in pairs(store or {}) do
+            if not found[id] and type(list) == "table" then
+                for _, s in ipairs(list) do
+                    if type(s) == "table" and s.t == "drop" and s.n == name then
+                        if self:ListsDropper(id, name) then found[id] = 0 end
+                        break
+                    end
+                end
             end
         end
     end

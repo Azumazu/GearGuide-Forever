@@ -101,6 +101,33 @@ local function fmtNum(v)
     return string.format("%.1f", v)
 end
 
+-- "+3 Agility, +3 Intellect" for a random variant's bonus (nil if it has none).
+local function bonusText(bonus)
+    local parts = {}
+    for _, k in ipairs(STAT_ORDER) do
+        local v = bonus and bonus[k]
+        if v and v ~= 0 and k ~= "DPS" then
+            parts[#parts + 1] = (v > 0 and "+" or "") .. fmtNum(v) .. (STAT_PERCENT[k] and "% " or " ") .. (STAT_NAMES[k] or k)
+        end
+    end
+    return #parts > 0 and table.concat(parts, ", ") or nil
+end
+
+local MAX_VARIANT_LINES = 12
+
+-- Order of the random variants in the item detail. a and b: { name = "of the Falcon",
+-- score = this variant's GearGuide score for the browsed class/spec, c = drop chance % (nil when
+-- the variant was only seen in game), bonus = { AGI = 3, ... } }. Return true if a goes first.
+-- Best for the browsed spec first (that's the one worth farming), then the likeliest, then by name.
+local function variantOrder(a, b)
+    -- Rounded to the 0.1 shown (a tolerance like |a - b| > 0.05 isn't transitive and can make
+    -- table.sort fail with "invalid order function").
+    local sa, sb = math.floor(a.score * 10 + 0.5), math.floor(b.score * 10 + 0.5)
+    if sa ~= sb then return sa > sb end
+    if (a.c or 0) ~= (b.c or 0) then return (a.c or 0) > (b.c or 0) end
+    return a.name < b.name
+end
+
 local function scoreText(score, delta)
     local s = string.format("%.1f", score or 0)
     if delta then
@@ -238,6 +265,13 @@ local iconEvents = CreateFrame("Frame")
 iconEvents:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 iconEvents:SetScript("OnEvent", function(_, _, itemID)
     itemID = tonumber(itemID)
+    if itemID and state.variantWait == itemID then  -- the detail's "variants still loading"
+        state.variantWait = nil
+        C_Timer.After(0.2, function()
+            local sel = state.selected
+            if frame and frame:IsShown() and sel and sel.id == itemID then updateDetail() end
+        end)
+    end
     if not itemID or not pendingIcons[itemID] then return end
     pendingIcons[itemID] = nil
     if iconRefreshPending or not frame or not frame:IsShown() then return end
@@ -430,8 +464,8 @@ end
 
 local function rowOnEnter(row, d)
     if d.kind == "item" then
-        ns:ShowItemTooltip(row, d.id, { score = d.score, delta = d.delta, class = d.class, cursor = true })
-        placeTooltipBesideWindow(row)
+        ns:ShowItemTooltip(row, d.id, { score = d.score, delta = d.delta, class = d.class,
+            place = placeTooltipBesideWindow })  -- also applied when the tooltip is re-shown
     elseif d.kind == "header" and d.equippedLink then
         GameTooltip:SetOwner(row, "ANCHOR_NONE")
         GameTooltip:SetHyperlink(d.equippedLink)
@@ -563,6 +597,17 @@ local function buildRecommendedRows()
     return rows
 end
 
+-- Search text matches part of the name, or is the name plus a random suffix: items like
+-- "Cross Dagger of the Falcon" are stored under their base name ("Cross Dagger").
+function ns.NameMatches(name, text)
+    if not name then return false end
+    name = name:lower()
+    if name:find(text, 1, true) then return true end
+    if text:sub(1, #name) ~= name then return false end
+    local rest = text:sub(#name + 1)  -- "", " o", " of", " of the falcon"...
+    return (" of "):sub(1, #rest) == rest or rest:sub(1, 4) == " of "
+end
+
 local function buildBrowserRows()
     local f = state.filter
     local spec = browseSpec()
@@ -588,7 +633,7 @@ local function buildBrowserRows()
         if group and (not groupKey or group == groupKey) and (item.q or 1) >= minQ and ns:ShowsItem(id) then
             local eff = ns.EffectiveLevel(item)
             if (not minL or eff >= minL) and (not maxL or eff <= maxL)
-                and (text == "" or (item.n and item.n:lower():find(text, 1, true)))
+                and (text == "" or ns.NameMatches(item.n, text))
                 and (not f.usable or ns:IsUsable(item, f.class, level))
                 and (not f.hideDone or ns:GetCompletion(id, f.class) ~= "done") then
                 rows[#rows + 1] = { kind = "item", id = id, item = item,
@@ -818,7 +863,8 @@ function updateDetail()
     local weights, ctx = ns:GetScoringContext(class, sel.spec)
     local score = ns:Score(item, weights, ctx)
     bodyAdd("Score for " .. classLabel(class) .. ns.Skin:Hex("textDim") .. DOT .. "|r"
-        .. ns:SpecLabel(class, ctx.spec), small, "textDim", 10)
+        .. (ctx.custom and ("Custom (" .. ns:SpecLabel(class, ctx.spec) .. ")") or ns:SpecLabel(class, ctx.spec)),
+        small, "textDim", 10)
     bodyAdd(string.format("%.1f", score), hdr, "accent", 1)
     if class == ns:GetPlayerClass() then
         local base, baseLink, isEquipped = equippedBaseline(id, item, weights, ctx)
@@ -863,6 +909,44 @@ function updateDetail()
         end
     end
     if not any then bodyAdd("No stats", small, "textDim", 1, 6) end
+
+    -- Random variants ("...of the Falcon"): name, bonus stats and score from the game client.
+    local variants = ns:GetVariants(id)
+    if #variants > 0 then
+        bodyAdd("Random variants", hdr, "accent", 10)
+        bodyAdd(string.format("Drops as one of %d variant%s with a random bonus; the stats above are %s.",
+            #variants, #variants == 1 and "" or "s",
+            ns.LinkSuffix(sel.link) and "your equipped variant's" or "without it"), small, "textDim", 1, 6)
+        local rows, pending = {}, 0
+        for _, v in ipairs(variants) do
+            local info = ns:VariantInfo(id, v.p)
+            if info then
+                local copy = {}
+                for k, x in pairs(item) do copy[k] = x end
+                copy.st = next(info.st) and info.st or item.st
+                rows[#rows + 1] = { name = info.suffix or info.name, bonus = info.bonus, c = v.c,
+                    score = ns:Score(copy, weights, ctx) }
+            else
+                pending = pending + 1
+            end
+        end
+        table.sort(rows, variantOrder)
+        for i, r in ipairs(rows) do
+            if i > MAX_VARIANT_LINES then
+                bodyAdd(string.format("...and %d more", #rows - MAX_VARIANT_LINES), small, "textDim", 1, 6)
+                break
+            end
+            local line = r.name .. ns.Skin:Hex("textDim") .. DOT .. "|r" .. (bonusText(r.bonus) or "no bonus stats")
+                .. ns.Skin:Hex("textDim") .. DOT .. "|r" .. string.format("%.1f", r.score)
+            if r.c then line = line .. " |cffffd100" .. ns.FormatChance(r.c) .. "|r" end
+            bodyAdd(line, small, "text", 1, 6)
+        end
+        if pending > 0 then
+            state.variantWait = id
+            bodyAdd(string.format("%d variant%s still loading from the game.", pending, pending == 1 and "" or "s"),
+                small, "textDim", 1, 6)
+        end
+    end
 
     -- Sources
     bodyAdd("Where to get it", hdr, "accent", 10)
@@ -1050,7 +1134,8 @@ local function createBrowseBar(parent)
             if sel and sel.class == (f.class or ns:GetPlayerClass()) then sel.spec = key end
             filterChanged()
         end,
-        tooltip = { "Specialization", "Spec used to score gear for the browsed class." },
+        tooltip = { "Specialization", "Spec used to score gear for the browsed class. With custom stat weights on "
+            .. "(Settings), your own class at the custom spec's base spec is scored with your weights." },
     })
 
     W.slotSel = Skin:Dropdown(bar, 100, {
@@ -1551,7 +1636,7 @@ local function revealInBrowser(id, item)
     local f = state.filter
     local pclass = ns:GetPlayerClass()
     local level = UnitLevel("player")
-    if f.text ~= "" and not (item.n and item.n:lower():find(f.text:lower(), 1, true)) then f.text = "" end
+    if f.text ~= "" and not ns.NameMatches(item.n, f.text:lower()) then f.text = "" end
     local key = ns.EQUIPLOC_GROUP[item.eq]
     if f.slot > 0 and ns.SLOT_GROUPS[f.slot].key ~= key then f.slot = 0 end
     local eff = ns.EffectiveLevel(item)

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.16.2 (2026-11-15)
+
+- Random bonus items ("...of the Falcon", "...of the Monkey"): looting one now counts as a drop of the base item (e.g. Cross Dagger), so its source and location are recorded there.
+- Items that drop with a random bonus have a new "Random variants" section in the item details: every possible bonus with its stats, its score for the spec you're browsing and how often it drops, best for you first. Covers 1,671 items.
+- Game tooltips of a random bonus item now say which item it's a variant of and how often that bonus drops.
+- Gear browser: searching for an item's full name with its bonus (e.g. "Cross Dagger of the Falcon") finds the base item.
+- Loot is now also recorded when auto loot empties the loot window before it opens, which lost some drops before.
+- Cross Dagger: added Nightbane Dark Runner (Duskwood) as a source.
+- Sources without a usable name ("Unknown", "Container", empty) are removed and no longer recorded.
+- Creature tooltips now use the same source list as the item details.
+- Clearing GearGuide's map pins no longer removes your own map waypoint, and the map no longer keeps checking for pins after they're cleared.
+- Item tooltips in the GearGuide window no longer jump when the item finishes loading.
+- Custom stat weights: scores using them are now labeled "Custom".
+- The "Gear Acquired" preview in Settings no longer replaces a real pop-up that was showing.
+- `/gg forget` now also clears shared sources and learned variants.
+
 ## 0.16.1 (2026-11-15)
 
 - "New drop location discovered for [item]": when you loot gear from a creature that isn't listed as a source for it yet, a message shows on screen and in chat (with the item link). Can be turned off in Settings > General.

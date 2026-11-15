@@ -451,18 +451,27 @@ def intern_sources(items: dict[int, dict]) -> tuple[list[dict], list[list]]:
     return pool, locs
 
 
-def write_lua(out: Path, items: dict[int, dict], meta: dict, header: list[str] | None = None) -> None:
+def write_lua(out: Path, items: dict[int, dict], meta: dict, header: list[str] | None = None,
+              randoms: dict[int, list] | None = None) -> None:
+    """randoms: {group: [suffix id, chance, ...]} for items with random variants (item.rg = group)."""
     items = {iid: dict(rec) for iid, rec in items.items()}  # don't mutate the caller's records
     tag_item_factions(items)
     pool, locs = intern_sources(items)
     meta = {**meta, "format": DB_FORMAT}
     lines = list(header or API_HEADER) + [
-        f"GearGuide_Data = {{ meta = {lua_val(meta)}, items = {{}}, sources = {{}}, locs = {{}} }}",
+        f"GearGuide_Data = {{ meta = {lua_val(meta)}, items = {{}}, sources = {{}}, locs = {{}}, randoms = {{}} }}",
         "local L = GearGuide_Data.locs",
     ]
     lines += [f"L[{i}]={lua_val(loc)}" for i, loc in enumerate(locs, 1)]
     lines.append("local S = GearGuide_Data.sources")
     lines += [f"S[{i}]={lua_val(s)}" for i, s in enumerate(pool, 1)]
+    for rec in items.values():
+        if rec.get("rg") and rec["rg"] not in (randoms or {}):
+            rec.pop("rg")  # its group isn't written: the client would find no variants anyway
+    used = {rec.get("rg") for rec in items.values()}
+    if randoms:
+        lines.append("local R = GearGuide_Data.randoms")
+        lines += [f"R[{g}]={lua_val(randoms[g])}" for g in sorted(randoms) if g in used]
     lines.append("local I = GearGuide_Data.items")
     lines += [f"I[{iid}]={lua_val(items[iid])}" for iid in sorted(items)]
     out.parent.mkdir(parents=True, exist_ok=True)

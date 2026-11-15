@@ -79,7 +79,8 @@ end
 
 -- info (optional): { score = n, delta = n, class = "MAGE", anchor = "ANCHOR_RIGHT",
 --                    beside = frame (place the tooltip outside this frame instead of using anchor),
---                    cursor = true (beside the mouse cursor, placed once per hover) }
+--                    cursor = true (beside the mouse cursor, placed once per hover),
+--                    place = function(owner) (positions the shown tooltip; run on every re-show) }
 function ns:ShowItemTooltip(owner, id, info)
     info = info or {}
     pendingTip = nil
@@ -115,6 +116,12 @@ function ns:ShowItemTooltip(owner, id, info)
         tip:AddLine(string.format("Partially acquired (%d/%d)", have, need), 1, 0.7, 0.2)
     end
 
+    local variants = #self:GetVariants(id)
+    if variants > 0 then
+        tip:AddLine(string.format("Drops with a random bonus (%d variant%s, listed in the GearGuide window)",
+            variants, variants == 1 and "" or "s"), 0.6, 0.8, 1, true)
+    end
+
     local sources = self:GetSources(id)
     if #sources == 0 then
         tip:AddLine("Not discovered yet. GearGuide learns the source when you loot, buy or see the item in game.", 0.6, 0.6, 0.6, true)
@@ -134,9 +141,60 @@ function ns:ShowItemTooltip(owner, id, info)
         if hasMap then tip:AddLine("Click a source in the GearGuide window to show it on the map.", 0.5, 0.5, 0.5, true) end
     end
     tip:Show()
-    if info.cursor then placeAtCursor(tip, owner) end
+    if info.place then
+        info.place(owner)
+    elseif info.cursor then
+        placeAtCursor(tip, owner)
+    end
 end
 
 function ns:HideItemTooltip()
     GameTooltip:Hide()
+end
+
+-- The game's own item tooltips (bags, loot, links): a random variant names its base item.
+function ns:VariantTooltipLines(link)
+    local suffix = ns.LinkSuffix(link)
+    local id = suffix and ns.LinkToId(link)
+    local item = id and self:GetItem(id)
+    if not (item and item.n) then return nil end
+    local variants = self:GetVariants(id)
+    local chance
+    for _, v in ipairs(variants) do
+        if v.p == suffix then chance = v.c end
+    end
+    local first = "GearGuide: random variant of " .. ns.QualityHex(item.q or 1) .. item.n .. "|r"
+    local second = #variants > 1 and string.format("One of %d variants%s", #variants,
+        chance and string.format(" (this bonus: %s of drops)", ns.FormatChance(chance)) or "")
+    return first, second
+end
+
+local function addVariantLines(tip, link)
+    link = ns.Plain(link)
+    if not link then
+        local ok, _, l = pcall(tip.GetItem, tip)
+        link = ok and ns.Plain(l) or nil
+    end
+    local first, second = ns:VariantTooltipLines(link)
+    if not first then return false end
+    tip:AddLine(first, 0.4, 1, 0.6)
+    if second then tip:AddLine(second, 0.6, 0.6, 0.6) end
+    return true
+end
+ns.AddVariantTooltipLines = addVariantLines  -- (tests)
+
+if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType
+    and Enum.TooltipDataType.Item then
+    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tip, data)
+        pcall(addVariantLines, tip, data and data.hyperlink)
+    end)
+else
+    for _, t in ipairs({ GameTooltip, ItemRefTooltip }) do
+        if t and t.HookScript then
+            t:HookScript("OnTooltipSetItem", function(tip)
+                local ok, added = pcall(addVariantLines, tip)
+                if ok and added then tip:Show() end
+            end)
+        end
+    end
 end
