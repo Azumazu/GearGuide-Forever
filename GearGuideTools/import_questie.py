@@ -785,6 +785,7 @@ def add_raid_items(items: dict[int, dict], store: QuestieStore, zones: ZoneData,
 
 
 MAX_LEVEL_GAP = 15  # a creature this many levels below the item's required level can't drop it
+WORLD_DROP_MAX_CHANCE = 1.0  # % : loot tables with no chance this high are world drops (incomplete lists)
 
 
 def drop_implausible(items: dict[int, dict], store: QuestieStore) -> int:
@@ -819,9 +820,11 @@ def merge_sources(items: dict[int, dict], questie_path: Path, chances: dict | No
         if not new:
             continue
         have = rec.setdefault("src", [])
-        if any(s.get("dc") for s in new):
+        if max((s.get("dc") or 0 for s in new), default=0) >= WORLD_DROP_MAX_CHANCE:
             # The item's loot table is known: learned/shared drops from other creatures are
             # misattributed (older versions credited container loot to the targeted creature).
+            # World drops (every chance below 1%: chests and random creatures) are exempt: any
+            # creature of the right level can drop them (same rule as Core.lua GetSources).
             droppers = {s.get("n") for s in new if s.get("t") == "drop"}
             have[:] = [s for s in have if not (isinstance(s, dict) and s.get("t") == "drop"
                                                and s.get("n") not in droppers)]

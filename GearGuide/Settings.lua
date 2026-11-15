@@ -210,6 +210,11 @@ function ns:CreateSettingsPanel(parent)
         function(on) GearGuideDB.creatureTips = on and true or false end,
         "Mouse over a creature to see which of your recommended and favorite items it drops, with the drop chance "
         .. "and the score gain over what you have equipped.")
+    panel.announceDrops = check("Announce new drop locations",
+        function() return GearGuideDB.announceDrops ~= false end,
+        function(on) GearGuideDB.announceDrops = on and true or false end,
+        "When you loot gear from a creature that isn't listed as a source for it yet, shows "
+        .. "\"New drop location discovered for [item]\" on screen and in chat.")
 
     -- Recommendations ----------------------------------------------------------
     section("Recommendations", "also used by the mini tracker")

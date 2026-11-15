@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.16.1 (2026-11-15)
+
+- "New drop location discovered for [item]": when you loot gear from a creature that isn't listed as a source for it yet, a message shows on screen and in chat (with the item link). Can be turned off in Settings > General.
+- World drops (items that can drop from any creature of the right level, e.g. Feet of the Lynx) now keep the creatures players find them on. Before, these were hidden because the database only lists a few chests for them.
+- Drops found by players now get the creature's map location when the database knows where it spawns.
+- Gear browser: searching by name now finds items outside the level range (class, slot and quality filters still apply).
+- Feet of the Lynx: added Skeletal Horror (Duskwood) as a source.
+- 927 new item sources from player discoveries.
+
 ## 0.16.0 (2026-11-15)
 
 - Custom stat weights: pick "Custom" in the Spec menu (window header) to score gear with your own value for every stat. Settings has the editor: one box per stat (decimal commas like 0,5 work; empty or 0 ignores the stat, negative values mark stats you'd rather avoid), the spec it's based on (decides your role and how you hold weapons), and a button to reset to that spec's researched values. Your first switch copies your current spec's weights; your values are kept per character.

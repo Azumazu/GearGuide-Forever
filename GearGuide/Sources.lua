@@ -38,9 +38,34 @@ function ns:LearnLink(link, src)
         self:InvalidateItems()
     end
     if src and src.t == "drop" and ns.InvalidateSpotNames then ns:InvalidateSpotNames() end
+    -- A creature nobody listed yet for this item (shipped data, own or shared finds): announce it.
+    local fresh = src and src.t == "drop" and src.n and src.n ~= "Container" and not self:ListsDropper(id, src.n)
     if src and addSource(id, src) and ns.QueueShare then
         ns:QueueShare(id, src)  -- share first-time sightings (unless the player opted out)
     end
+    -- Only if it's really listed now (GetSources hides misattributed drops from known loot tables).
+    if fresh and self:ListsDropper(id, src.n) then self:AnnounceNewDrop(id, link) end
+end
+
+-- Does the item's source list (as the player sees it) already name this creature?
+function ns:ListsDropper(id, name)
+    for _, s in ipairs(self:GetSources(id)) do
+        if s.t == "drop" and s.n == name then return true end
+    end
+    return false
+end
+
+-- "New drop location discovered for [item]": on screen (like quest progress) and in chat (with the
+-- clickable item link). Settings: General > "Announce new drop locations".
+function ns:AnnounceNewDrop(id, link)
+    if GearGuideDB and GearGuideDB.announceDrops == false then return end
+    local item = self:GetItem(id)
+    local name = (item and item.n) or ns.GetItemInfo(id) or ("item " .. id)
+    local hex = ns.QualityHex(item and item.q or 1)
+    if UIErrorsFrame and UIErrorsFrame.AddMessage then
+        UIErrorsFrame:AddMessage("New drop location discovered for " .. hex .. name .. "|r", 1, 0.82, 0)
+    end
+    ns.Print("New drop location discovered for " .. (link or (hex .. "[" .. name .. "]|r")))
 end
 
 local function zone()
@@ -175,12 +200,38 @@ local function onTargetChanged()
     if ok and Plain(near) then recordSpot(name) end
 end
 
+-- /gg dev loot: prints what the client reports for every loot slot and what GearGuide makes of it
+-- (diagnosing drops that aren't credited). Never prints a secret value itself.
+local function show(v)
+    if v == nil then return "nil" end
+    if issecretvalue and issecretvalue(v) then return "SECRET" end
+    return tostring(v)
+end
+
+local function traceLoot(i, link, name, level)
+    local rawGuid = type(GetLootSourceInfo) == "function" and GetLootSourceInfo(i) or nil
+    local guid = Plain(rawGuid)
+    local tgt = UnitGUID and UnitGUID("target")
+    ns.Print(string.format("loot %d: %s | source GUID %s (%s) | cached name %s | target GUID %s, %s, dead %s"
+        .. " | -> %s (level %s)%s",
+        i, link or "no link", show(rawGuid), guid and (guid:match("^(%a+)") or "?") or "-",
+        show(guid and nameByGUID[guid]), show(tgt), show(UnitName and UnitName("target")),
+        show(UnitIsDead and UnitIsDead("target")), show(name), show(level),
+        (link and name and not plausibleDrop(link, level)) and " | rejected: item level too high" or ""))
+end
+
+function ns:ToggleLootTrace()
+    self.lootTrace = not self.lootTrace
+    ns.Print("Loot trace " .. (self.lootTrace and "on: loot something, the details print here." or "off."))
+end
+
 local function onLootOpened()
     local z = zone()
     local spotted = {}
     for i = 1, GetNumLootItems() do
         local link = GetLootSlotLink(i)
         local name, level = lootSource(i)
+        if ns.lootTrace then pcall(traceLoot, i, link, name, level) end
         if link and name and plausibleDrop(link, level) then
             ns:LearnLink(link, { t = "drop", n = name, z = z })
         end

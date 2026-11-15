@@ -1,9 +1,26 @@
 {
   "_comment": "Hand-written fixes folded into Data.lua by build_db.py / update_db.py. Keys are item IDs. Set a field to a value or null (removes it); 'src+' adds sources, 'src-' removes sources matching the given keys; '_delete': true drops the item. Source types: drop, quest, vendor, craft. Example: \"12345\": { \"rl\": 20, \"src+\": [ { \"t\": \"quest\", \"n\": \"Quest name\", \"z\": \"Zone\" } ] }",
   "_hide_sources_comment": "Every item with a source of one of these names is left out of the database and hidden in game.",
-  "_hide_sources": [ "Super Hogger" ],
+  "_hide_sources": [
+    "Super Hogger"
+  ],
   "_example_do_not_apply": {
     "rl": 20,
-    "src+": [ { "t": "quest", "n": "Quest name", "z": "Zone" } ]
+    "src+": [
+      {
+        "t": "quest",
+        "n": "Quest name",
+        "z": "Zone"
+      }
+    ]
+  },
+  "1121": {
+    "src+": [
+      {
+        "t": "drop",
+        "n": "Skeletal Horror",
+        "z": "Duskwood"
+      }
+    ]
   }
 }

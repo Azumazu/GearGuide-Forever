@@ -19,6 +19,7 @@ local defaults = {
     minQuality = 2,   -- lowest item quality recommended (2 = Uncommon)
     map = { routes = true, waypoint = false },  -- draw patrol routes; set a waypoint arrow (game / TomTom)
     creatureTips = true,  -- list the gear a creature drops on its tooltip
+    announceDrops = true, -- "New drop location discovered for [item]" when looting a new source
     -- "Gear Acquired" pop-up (Toast.lua): on/off, locked in place, width, scale; point = saved position
     toast = { shown = true, locked = false, w = 300, scale = 1 },
 }
@@ -188,6 +189,30 @@ function ns.PlayerFaction()
     return (group == "Alliance" and "A") or (group == "Horde" and "H") or nil
 end
 
+-- Creature name -> { { z = zone name, loc = locations }, ... } from shipped drop sources that have a
+-- map location. Learned/shared/hand-added drops carry only a name and zone; they borrow the spot of
+-- the same creature from here (zone must match: "Defias Bandit" lives in more than one zone).
+local creatureLocs
+local function locForCreature(name, z)
+    if not creatureLocs then
+        creatureLocs = {}
+        local pool, locs = GearGuide_Data.sources or {}, GearGuide_Data.locs or {}
+        for _, s in pairs(pool) do
+            if type(s) == "table" and s.t == "drop" and s.k ~= "object" and s.n and s.l and locs[s.l] then
+                local list = creatureLocs[s.n] or {}
+                creatureLocs[s.n] = list
+                list[#list + 1] = { z = ns.ZoneName(s.z), loc = locs[s.l] }
+            end
+        end
+    end
+    local list = creatureLocs[name]
+    if not list then return nil end
+    local zone = ns.ZoneName(z)
+    for _, e in ipairs(list) do
+        if not zone or e.z == zone then return e.loc, e.z end
+    end
+end
+
 function ns:GetSources(id)
     local out, seen = {}, {}
     local faction = ns.PlayerFaction()
@@ -222,7 +247,12 @@ function ns:GetSources(id)
             end
         end
         add(resolved)
-        if type(dbItem.dc) == "table" then
+        -- Only a real loot table (some source drops it at 1% or more, e.g. a raid boss) rules out
+        -- other creatures. World drops (only tiny chances: a few chests and random creatures) can
+        -- come from any creature of the right level, so learned drops of those stay.
+        local best = 0
+        for _, c in ipairs(type(dbItem.dc) == "table" and dbItem.dc or {}) do best = math.max(best, c) end
+        if best >= 1 then
             knownDroppers = {}
             for _, s in ipairs(resolved) do
                 if s.t == "drop" and s.n then knownDroppers[s.n] = true end
@@ -231,6 +261,18 @@ function ns:GetSources(id)
     end
     add(GearGuideLearned.sources[id])
     if ns.GetSharedSources then add(ns:GetSharedSources(id)) end  -- from other GearGuide users
+    -- Drops without a location (learned, shared, hand-added): the same creature's shipped spot.
+    for i, s in ipairs(out) do
+        if s.t == "drop" and s.k ~= "object" and not s.loc and s.n then
+            local loc, z = locForCreature(s.n, s.z)
+            if loc then
+                local c = {}
+                for k, v in pairs(s) do c[k] = v end
+                c.loc, c.z = loc, c.z or z
+                out[i] = c
+            end
+        end
+    end
     -- Creatures without a known location: where the player has found them (Sources.lua spots).
     local spots, spotZones = GearGuideLearned.spots or {}, GearGuideLearned.spotZones or {}
     for i, s in ipairs(out) do
@@ -849,6 +891,19 @@ SlashCmdList.GEARGUIDE = function(msg)
         local want = rest:lower()
         if want == "on" or want == "off" then ns:SetSharing(want == "on")
         else ns:SetSharing(not ns:IsSharingEnabled()) end
+    elseif cmd == "dev" and rest:lower():match("^loot") then
+        ns:ToggleLootTrace()  -- /gg dev loot: print where each looted item is credited (Sources.lua)
+    elseif cmd == "dev" and rest:lower():match("^toast") then
+        -- /gg dev toast [itemID or shift-clicked link]: show the Gear Acquired pop-up (testing).
+        -- Without an item: your top recommended pick, else a favorite. Changes no acquired marks.
+        local arg = rest:match("^%S+%s+(.+)$")
+        local id = arg and (tonumber(arg) or ns.LinkToId(arg))
+        if not id then
+            local ok, rec = pcall(ns.BuildRecommendations, ns)
+            for _, g in ipairs(ok and rec and rec.groups or {}) do id = id or (g.picks[1] and g.picks[1].id) end
+            id = id or ns:GetFavorites()[1]
+        end
+        if id then ns:ShowGearToast(id) else ns.Print("No item to show: /gg dev toast <itemID or link>") end
     elseif cmd == "dev" then
         GearGuideDB.maintainer = not GearGuideDB.maintainer
         GearGuideDB.notifiedBuild = nil

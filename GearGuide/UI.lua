@@ -577,6 +577,9 @@ local function buildBrowserRows()
     local ids = f.favOnly and ns:GetFavorites() or ns:AllItemIds()
     local minL = not f.favOnly and f.minL or nil
     local maxL = not f.favOnly and f.maxL or nil
+    -- Searching by name ignores the level range too: an item you look up by name should come up
+    -- even when it's a few levels below or above the range (class, slot and quality still apply).
+    if text ~= "" then minL, maxL = nil, nil end
 
     local rows = {}
     for _, id in ipairs(ids) do
