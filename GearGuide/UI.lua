@@ -55,6 +55,7 @@ local STAT_NAMES = {
     SCRIT = "Spell Critical Strike", SHIT = "Spell Hit", DEF = "Defense", DODGE = "Dodge",
     PARRY = "Parry", BLOCK = "Block", MP5 = "Mana per 5 sec.", HASTE = "Haste", EXPERTISE = "Expertise",
 }
+ns.STAT_ORDER, ns.STAT_NAMES = STAT_ORDER, STAT_NAMES  -- (Settings: custom stat weights)
 local STAT_PERCENT = { CRIT = true, HIT = true, SCRIT = true, SHIT = true, DODGE = true, PARRY = true, HASTE = true, EXPERTISE = true }
 
 local ARMOR_TYPES = { [0] = "Miscellaneous", [1] = "Cloth", [2] = "Leather", [3] = "Mail", [4] = "Plate",
@@ -1157,7 +1158,9 @@ local function updateSubtitle()
     local level = UnitLevel("player")
     local minL = math.max(1, level - (GearGuideDB.levelBehind or 5))
     local maxL = level + (GearGuideDB.levelAhead or 3)
-    frame.subtitle:SetText(classLabel(class) .. DOT .. (spec and spec.label or "?")
+    local specText = spec and spec.label or "?"
+    if ns:IsCustomWeights() then specText = "Custom (" .. specText .. ")" end
+    frame.subtitle:SetText(classLabel(class) .. DOT .. specText
         .. " (" .. roleLabel(spec and spec.role) .. ")" .. DOT
         .. string.format("req. level %d%s%d", minL, DASH, maxL))
 end
@@ -1396,15 +1399,26 @@ local function createWindow()
             items[1] = { value = "AUTO", text = "Auto (" .. (detected and detected.label or "?") .. ")",
                 icon = detected and detected.icon, note = "from talents" }
             for _, it in ipairs(specItems(ns:GetPlayerClass())) do items[#items + 1] = it end
+            local custom = GearGuideCharDB.custom
+            local base = ns:GetSpecInfo(nil, custom and custom.base or ns:GetPlayerSpec())
+            items[#items + 1] = { value = "CUSTOM", text = "Custom", icon = base and base.icon,
+                note = "your own stat weights" }
             return items
         end,
-        getValue = function() return ns:IsSpecAuto() and "AUTO" or ns:GetPlayerSpec() end,
+        getValue = function()
+            if ns:IsSpecAuto() then return "AUTO" end
+            return ns:IsCustomWeights() and "CUSTOM" or ns:GetPlayerSpec()
+        end,
         onSelect = function(key)
             ns:SetPlayerSpec(key)  -- refreshes the window and the mini tracker (debounced)
+            if key == "CUSTOM" then
+                setTab("settings")
+                W.settings:ScrollToSection("custom")
+            end
         end,
         prefix = "Spec",
         tooltip = { "Your specialization", "Used to score the Recommended tab and the mini tracker. "
-            .. "Auto follows your talents." },
+            .. "Auto follows your talents. Custom uses your own stat weights (edit them in Settings)." },
     })
     W.specDD:SetPoint("RIGHT", frame.closeButton, "LEFT", -Skin.GAP, 0)
 

@@ -19,6 +19,8 @@ local defaults = {
     minQuality = 2,   -- lowest item quality recommended (2 = Uncommon)
     map = { routes = true, waypoint = false },  -- draw patrol routes; set a waypoint arrow (game / TomTom)
     creatureTips = true,  -- list the gear a creature drops on its tooltip
+    -- "Gear Acquired" pop-up (Toast.lua): on/off, locked in place, width, scale; point = saved position
+    toast = { shown = true, locked = false, w = 300, scale = 1 },
 }
 
 local function applyDefaults(dst, src)
@@ -501,6 +503,7 @@ end
 -- The player's spec: their saved choice, else detected from talents, else the first spec.
 function ns:GetPlayerSpec()
     local chosen = GearGuideCharDB and GearGuideCharDB.spec
+    if chosen == "CUSTOM" then chosen = GearGuideCharDB.custom and GearGuideCharDB.custom.base end
     if chosen and chosen ~= "AUTO" then
         for _, s in ipairs(self:GetSpecs()) do
             if s.key == chosen then return chosen end
@@ -510,14 +513,52 @@ function ns:GetPlayerSpec()
     return detected or (self:GetSpecs()[1] or {}).key
 end
 
--- key = a spec key or "AUTO" (follow talents).
+-- key = a spec key, "AUTO" (follow talents) or "CUSTOM" (the player's own stat weights).
 function ns:SetPlayerSpec(key)
+    if key == "CUSTOM" then self:InitCustomWeights() end
     GearGuideCharDB.spec = key or "AUTO"
     self:RequestRefresh()
 end
 
 function ns:IsSpecAuto()
     return not GearGuideCharDB or not GearGuideCharDB.spec or GearGuideCharDB.spec == "AUTO"
+end
+
+---------------------------------------------------------------------------
+-- Custom stat weights: the player's own value per stat point, on top of a base spec that still
+-- decides the role and how weapons are held. Per character:
+-- GearGuideCharDB.custom = { base = specKey, weights = { STAT = value } }.
+---------------------------------------------------------------------------
+function ns:IsCustomWeights()
+    return GearGuideCharDB ~= nil and GearGuideCharDB.spec == "CUSTOM" and GearGuideCharDB.custom ~= nil
+end
+
+-- First use starts from the spec the player is on, so the numbers begin somewhere sensible.
+function ns:InitCustomWeights()
+    if GearGuideCharDB.custom and GearGuideCharDB.custom.weights then return end
+    local base = self:GetPlayerSpec()
+    GearGuideCharDB.custom = { base = base, weights = self:GetWeights(self:GetPlayerClass(), base, 60) }
+end
+
+function ns:SetCustomBase(key)
+    self:InitCustomWeights()
+    GearGuideCharDB.custom.base = key
+    self:RequestRefresh()
+end
+
+-- value nil or 0 removes the stat.
+function ns:SetCustomWeight(stat, value)
+    self:InitCustomWeights()
+    GearGuideCharDB.custom.weights[stat] = (value and value ~= 0) and value or nil
+    self:RequestRefresh()
+end
+
+-- Back to the base spec's researched values (level 60 ones; custom weights have no leveling set).
+function ns:ResetCustomWeights()
+    self:InitCustomWeights()
+    local c = GearGuideCharDB.custom
+    c.weights = self:GetWeights(self:GetPlayerClass(), c.base, 60)
+    self:RequestRefresh()
 end
 
 function ns:SpecLabel(class, key)
@@ -529,6 +570,7 @@ end
 function ns:PlayerSpecLabel()
     local label = self:SpecLabel(nil, self:GetPlayerSpec())
     if self:IsSpecAuto() then return "Auto (" .. label .. ")" end
+    if self:IsCustomWeights() then return "Custom (" .. label .. ")" end
     return label
 end
 

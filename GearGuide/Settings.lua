@@ -40,6 +40,16 @@ function ns:SetMinQuality(q)
     self:RequestRefresh()
 end
 
+-- Text typed into a custom stat weight box -> number to store, or nil to reject the input (the box
+-- then shows the previous value again). Returning 0 clears the stat.
+function ns.ParseWeight(text)
+    text = (text or ""):match("^%s*(.-)%s*$")
+    if text == "" then return 0 end                -- blank clears the stat
+    local v = tonumber((text:gsub(",", ".")))      -- "0,5" (decimal comma) works too
+    if not v or v ~= v then return nil end         -- not a number (or NaN)
+    return math.max(-100, math.min(100, v))        -- negative = "avoid this stat"; caps typos
+end
+
 function ns:SetLevelRange(behind, ahead)
     if behind then GearGuideDB.levelBehind = math.max(0, math.min(MAX_LEVEL_BEHIND, math.floor(behind))) end
     if ahead then GearGuideDB.levelAhead = math.max(0, math.min(MAX_LEVEL_AHEAD, math.floor(ahead))) end
@@ -89,8 +99,10 @@ function ns:CreateSettingsPanel(parent)
         y = y + (h or ROW_H)
     end
 
-    local function section(title, note)
+    local sectionY = {}   -- [key] = y of the section's title (ScrollToSection)
+    local function section(title, note, key)
         y = y + (y > 4 and 10 or 0)
+        if key then sectionY[key] = y end
         local t = Skin:Text(body, Skin.SIZE.header, "accent")
         t:SetText(title)
         t:SetPoint("TOPLEFT", body, "TOPLEFT", 2, -y)
@@ -212,6 +224,74 @@ function ns:CreateSettingsPanel(parent)
         function(v) ns:SetMinQuality(v) end,
         "Items below this quality are never recommended. The gear browser has its own quality filter.")
 
+    -- Custom stat weights --------------------------------------------------------
+    section("Custom stat weights", "Spec: Custom in the window header", "custom")
+    local custom = function() return GearGuideCharDB.custom end
+    panel.customOn = check("Use my own stat weights",
+        function() return ns:IsCustomWeights() end,
+        function(on)
+            if on then ns:SetPlayerSpec("CUSTOM")
+            else ns:SetPlayerSpec(custom() and custom().base or "AUTO") end
+        end,
+        "Scores the Recommended tab, the mini tracker and tooltips with the values below instead of the "
+        .. "researched ones for your spec.")
+    local specList = {}
+    for _, s in ipairs(ns:GetSpecs()) do specList[#specList + 1] = { value = s.key, text = s.label, icon = s.icon } end
+    panel.customBase = dropdown("Based on spec", specList,
+        function() return custom() and custom().base or ns:GetPlayerSpec() end,
+        function(v) ns:SetCustomBase(v) end,
+        "Decides your role and how you hold weapons (two-hander, dual wield, shield...). Reset copies this "
+        .. "spec's researched weights.")
+    local reset = Skin:Button(body, "Reset to spec values")
+    reset:SetPoint("LEFT", panel.customBase, "RIGHT", Skin.GAP, 0)
+    reset:SetScript("OnClick", function() ns:ResetCustomWeights(); panel:Refresh() end)
+    tooltip(reset, "Reset to spec values", "Replaces every custom weight with the researched value of the spec "
+        .. "chosen on the left.")
+
+    local hint = Skin:Text(body, Skin.SIZE.small, "textDim")
+    hint:SetWidth(LABEL_W + 200)
+    hint:SetJustifyH("LEFT")
+    hint:SetText("Value of one point of each stat (percent stats like Hit and Crit: per 1%). "
+        .. "0 or empty ignores the stat. Enter or click away to apply.")
+    place(hint, INDENT, 22)
+
+    local fmtWeight = function(v)
+        if not v or v == 0 then return "" end
+        local t = string.format("%.3f", v):gsub("0+$", ""):gsub("%.$", "")
+        return t
+    end
+    local stats = {}
+    for _, k in ipairs(ns.STAT_ORDER or {}) do stats[#stats + 1] = k end
+    if (ns.GetPlayerClass and ns:GetPlayerClass()) == "HUNTER" then table.insert(stats, 2, "RDPS") end
+    panel.weights = {}
+    for _, stat in ipairs(stats) do
+        local name = stat == "RDPS" and "Ranged weapon damage per second"
+            or (ns.STAT_NAMES and ns.STAT_NAMES[stat]) or stat
+        if stat == "DPS" then name = "Weapon damage per second" end
+        local row = label(name)
+        local eb = Skin:EditBox(body, 70)
+        eb:SetPoint("LEFT", row, "RIGHT", 0, 0)
+        eb:SetPlaceholder("0")
+        local function apply(self)
+            local v = ns.ParseWeight(self:GetText())
+            if v then ns:SetCustomWeight(stat, v) end
+            self:SetText(fmtWeight(custom() and custom().weights[stat]))
+        end
+        eb:HookScript("OnEnterPressed", apply)
+        eb:HookScript("OnEditFocusLost", apply)
+        local c = { box = eb }
+        function c:Sync()
+            if not eb:HasFocus() then eb:SetText(fmtWeight(custom() and custom().weights[stat])) end
+            if ns:IsCustomWeights() then eb:Enable(); eb:SetAlpha(1) else eb:Disable(); eb:SetAlpha(0.45) end
+        end
+        controls[#controls + 1] = c
+        panel.weights[stat] = eb
+    end
+    controls[#controls + 1] = { Sync = function()
+        if ns:IsCustomWeights() then reset:Enable(); panel.customBase:Enable()
+        else reset:Disable(); panel.customBase:Disable() end
+    end }
+
     -- Mini tracker -----------------------------------------------------------
     section("Mini tracker")
     panel.miniShown = check("Show the mini tracker",
@@ -245,6 +325,33 @@ function ns:CreateSettingsPanel(parent)
         function() return mini().pvpHide ~= false end,
         function(on) mini().pvpHide = on; if ns.CheckMiniZone then ns:CheckMiniZone() end end)
 
+    -- Gear Acquired pop-up -------------------------------------------------------
+    section("Gear Acquired pop-up", "when you get recommended or favorite gear", "toast")
+    local toast = function() return GearGuideDB.toast end
+    panel.toastShown = check("Show the pop-up",
+        function() return toast().shown ~= false end,
+        function(on) toast().shown = on end,
+        "Pops up when an item GearGuide currently recommends for you, or one you favorited, lands in your bags. "
+        .. "Left-click it to open the item, right-click to dismiss.")
+    panel.toastLocked = check("Lock position and size",
+        function() return toast().locked end,
+        function(on) toast().locked = on; ns:ApplyToastLayout() end,
+        "Unlocked: drag the pop-up to move it, drag its bottom-right corner to make it wider or narrower.")
+    panel.toastScale = stepper("Scale", function() return tonumber(toast().scale) or 1 end,
+        function(v) toast().scale = math.floor(v * 100 + 0.5) / 100; ns:ApplyToastLayout() end,
+        0.6, 1.6, 0.05, pct)
+    local preview = Skin:Button(body, "Show preview")
+    place(preview, INDENT)
+    preview:SetScript("OnClick", function() ns:PreviewGearToast() end)
+    tooltip(preview, "Show preview", "Shows a sample pop-up that stays until you click it, so you can place "
+        .. "and size it (unlock first).")
+    local resetPos = Skin:Button(body, "Reset position")
+    resetPos:SetPoint("LEFT", preview, "RIGHT", Skin.GAP, 0)
+    resetPos:SetScript("OnClick", function()
+        toast().point, toast().w, toast().scale = nil, 300, 1
+        ns:ApplyToastLayout(); panel:Refresh()
+    end)
+
     -- Main window --------------------------------------------------------------
     section("Main window")
     panel.scale = stepper("Window scale", function() return tonumber(GearGuideDB.window.scale) or 1 end,
@@ -269,5 +376,14 @@ function ns:CreateSettingsPanel(parent)
         updateThumb()
     end
     panel:HookScript("OnShow", function() panel:Refresh() end)
+
+    -- Puts a section's title at the top of the visible page.
+    function panel:ScrollToSection(key)
+        local top = sectionY[key]
+        if not top then return end
+        local maxY = math.max(0, (body:GetHeight() or 0) - (scroll:GetHeight() or 0))
+        scroll:SetVerticalScroll(math.max(0, math.min(maxY, top - 4)))
+        updateThumb()
+    end
     return panel
 end

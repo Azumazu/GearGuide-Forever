@@ -10,7 +10,15 @@ function ns:GetScoringContext(class, specKey)
         specKey = (class == self:GetPlayerClass()) and self:GetPlayerSpec() or (self:GetSpecs(class)[1] or {}).key
     end
     local spec = self:GetSpecInfo(class, specKey)
-    return self:GetWeights(class, specKey, UnitLevel("player")),
+    local weights
+    if self:IsCustomWeights() and class == self:GetPlayerClass() and specKey == self:GetPlayerSpec() then
+        -- A copy: Score caches derived tables by identity, and the saved table changes in place.
+        weights = {}
+        for k, v in pairs(GearGuideCharDB.custom.weights) do weights[k] = v end
+    else
+        weights = self:GetWeights(class, specKey, UnitLevel("player"))
+    end
+    return weights,
         { class = class, spec = spec and spec.key, role = spec and spec.role or "MELEE", level = UnitLevel("player") }
 end
 

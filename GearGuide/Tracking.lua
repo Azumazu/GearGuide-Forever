@@ -76,7 +76,9 @@ end
 
 -- Scans everything currently owned and raises high-water marks.
 -- Returns true when at least one acquired count increased.
-function ns:ScanAcquired()
+-- quiet: don't announce new gear (login, bank contents, resets: things the player already had).
+local announce = false   -- off until shortly after login, so owned gear isn't "acquired" again
+function ns:ScanAcquired(quiet)
     if not (GearGuideCharDB and GearGuideCharDB.acquired) then return false end
     local acquired = GearGuideCharDB.acquired
     clear(counts)
@@ -95,13 +97,16 @@ function ns:ScanAcquired()
         for bag = numBags + 1, numBags + numBankBags do countContainer(bag) end
     end
 
-    local changed = false
+    local changed, gained = false, {}
     for id, n in pairs(counts) do
         if n > (acquired[id] or 0) and isGear(id) then
-            acquired[id] = n
+            gained[#gained + 1] = id
             changed = true
         end
     end
+    -- Announced before the marks change, so "currently recommended" means before this item came in.
+    if #gained > 0 and announce and not quiet and ns.OnGearAcquired then pcall(ns.OnGearAcquired, ns, gained) end
+    for _, id in ipairs(gained) do acquired[id] = counts[id] end
     if changed then self:RequestRefresh() end
     return changed
 end
@@ -138,7 +143,7 @@ frame:SetScript("OnEvent", function(_, event)
         if not hasBagUpdateDelayed then scheduleScan(0.2) end
     elseif event == "BANKFRAME_OPENED" then
         bankOpen = true
-        ns:ScanAcquired()
+        ns:ScanAcquired(true)
     elseif event == "BANKFRAME_CLOSED" then
         bankOpen = false
     elseif event == "PLAYERBANKSLOTS_CHANGED" or event == "PLAYERBANKBAGSLOTS_CHANGED" then
@@ -158,9 +163,9 @@ function ns:StartTracking()
     safeRegister("BANKFRAME_CLOSED")
     safeRegister("PLAYERBANKSLOTS_CHANGED")
     safeRegister("PLAYERBANKBAGSLOTS_CHANGED")
-    self:ScanAcquired()
+    self:ScanAcquired(true)
     -- Item info may still be cold right after login; scan again shortly.
-    C_Timer.After(2, function() ns:ScanAcquired() end)
+    C_Timer.After(2, function() ns:ScanAcquired(true); announce = true end)
 end
 
 ---------------------------------------------------------------------------
@@ -206,6 +211,6 @@ function ns:ResetAcquired()
     end
     clear(gearCache)
     -- Items owned right now count again immediately (otherwise the next bag event would re-mark them).
-    self:ScanAcquired()
+    self:ScanAcquired(true)
     self:RequestRefresh()
 end

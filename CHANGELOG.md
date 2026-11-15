@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.16.0 (2026-11-15)
+
+- Custom stat weights: pick "Custom" in the Spec menu (window header) to score gear with your own value for every stat. Settings has the editor: one box per stat (decimal commas like 0,5 work; empty or 0 ignores the stat, negative values mark stats you'd rather avoid), the spec it's based on (decides your role and how you hold weapons), and a button to reset to that spec's researched values. Your first switch copies your current spec's weights; your values are kept per character.
+- "Gear Acquired" pop-up: when an item GearGuide currently recommends for you, or one you favorited, lands in your bags, a pop-up shows it for a few seconds. Hover to keep it open, left-click to open the item, right-click to dismiss. Gear you already had (at login, in your bank) doesn't trigger it.
+- The pop-up can be moved (drag it) and made wider or narrower (drag its corner). Settings has a new section to turn it off, lock its position and size, scale it, show a preview to place it with, and reset its position.
+- 919 new item sources from player discoveries.
+
 ## 0.15.2 (2026-11-15)
 
 - Opening a source on the map no longer also places the game's own map pin and waypoint arrow: GearGuide's shaded areas and pins show where to go. You can turn the game's waypoint back on in Settings ("Set a waypoint arrow").
