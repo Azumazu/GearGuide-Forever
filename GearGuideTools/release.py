@@ -219,6 +219,11 @@ def main() -> int:
         if any(r.get("bp") for r in items.values()):
             from import_cmangos import CREDITS as CM_CREDITS
             meta["credits"] = "; ".join(c for c in (meta.get("credits"), CM_CREDITS) if c)
+    # Where creatures without a known location were found in game (GearGuideLearned.spots).
+    from build_db import apply_spots, learned_spots
+    placed = apply_spots(items, *learned_spots(saved))
+    if placed:
+        print(f"Creature locations learned in game: {placed} sources placed")
     if scan.get("phase") != "done" and not args.force:
         print(f"The scan isn't finished (phase: {scan.get('phase') or 'not started'}). Let /gg scan complete, "
               "then /reload or log out so WoW saves it. (--force overrides.)", file=sys.stderr)

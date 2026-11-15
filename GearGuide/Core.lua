@@ -229,6 +229,25 @@ function ns:GetSources(id)
     end
     add(GearGuideLearned.sources[id])
     if ns.GetSharedSources then add(ns:GetSharedSources(id)) end  -- from other GearGuide users
+    -- Creatures without a known location: where the player has found them (Sources.lua spots).
+    local spots, spotZones = GearGuideLearned.spots or {}, GearGuideLearned.spotZones or {}
+    for i, s in ipairs(out) do
+        if s.t == "drop" and s.k ~= "object" and not s.loc and s.n and (spots[s.n] or spotZones[s.n]) then
+            local c = {}
+            for k, v in pairs(s) do c[k] = v end
+            local maps = {}
+            for map, flat in pairs(spots[s.n] or {}) do
+                if #flat >= 2 then maps[#maps + 1] = { m = map, p = flat } end
+            end
+            table.sort(maps, function(a, b) return #a.p > #b.p end)
+            if #maps > 0 then c.loc = maps end
+            if not c.z then
+                local info = maps[1] and C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(maps[1].m)
+                c.z = (info and info.name) or spotZones[s.n]
+            end
+            out[i] = c
+        end
+    end
     -- Vendor prices live apart from the sources (keyed by vendor name), so shipped and learned
     -- vendor entries both get them. Copies: never write into saved or shipped tables.
     for i, s in ipairs(out) do
@@ -680,6 +699,8 @@ events:SetScript("OnEvent", function(_, event, arg1)
         GearGuideLearned.items = GearGuideLearned.items or {}
         GearGuideLearned.sources = GearGuideLearned.sources or {}
         GearGuideLearned.prices = GearGuideLearned.prices or {}  -- [itemID][vendor] = { g = copper, c = costs }
+        GearGuideLearned.spots = GearGuideLearned.spots or {}          -- [creature][uiMapID] = { x1, y1, ... }
+        GearGuideLearned.spotZones = GearGuideLearned.spotZones or {}  -- [creature] = zone name
         GearGuideHarvest = GearGuideHarvest or {}
         GearGuideHarvest.items = GearGuideHarvest.items or {}
         GearGuideHarvest.scan = GearGuideHarvest.scan or {}
@@ -831,6 +852,7 @@ SlashCmdList.GEARGUIDE = function(msg)
         ns.Print("Client scan: " .. ns:ScanStatus())
     elseif cmd == "forget" then
         GearGuideLearned.items, GearGuideLearned.sources, GearGuideLearned.prices = {}, {}, {}
+        GearGuideLearned.spots, GearGuideLearned.spotZones = {}, {}
         ns:InvalidateItems()
         ns.Print("Forgot all items and sources learned in game.")
     else

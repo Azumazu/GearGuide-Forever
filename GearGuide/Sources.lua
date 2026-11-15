@@ -37,6 +37,7 @@ function ns:LearnLink(link, src)
         GearGuideLearned.items[id] = item
         self:InvalidateItems()
     end
+    if src and src.t == "drop" and ns.InvalidateSpotNames then ns:InvalidateSpotNames() end
     if src and addSource(id, src) and ns.QueueShare then
         ns:QueueShare(id, src)  -- share first-time sightings (unless the player opted out)
     end
@@ -101,13 +102,91 @@ local function plausibleDrop(link, level)
     return need <= level + 10
 end
 
+---------------------------------------------------------------------------
+-- Creature spots: where creatures that drop gear but have no known map location are found (most
+-- are WoW: Forever's own creatures: neither Questie nor the build's databases place them).
+-- Recorded when the player loots one or targets one up close: the player's own map position is
+-- then within a few yards of the creature. Inside instances there are no coordinates; the
+-- instance's name is kept instead. GearGuideLearned.spots[name] = { [uiMapID] = { x1, y1, ... } },
+-- GearGuideLearned.spotZones[name] = zone name. The build bakes them into Data.lua.
+---------------------------------------------------------------------------
+local SPOTS_PER_MAP = 30
+local SPOT_MIN_GAP = 1.5      -- map % between kept spots of the same creature
+local wantedNames             -- creature names that drop gear and have no map location
+
+function ns:InvalidateSpotNames() wantedNames = nil end
+
+local function buildWanted()
+    wantedNames = {}
+    local pool = GearGuide_Data and GearGuide_Data.sources or {}
+    for _, s in pairs(pool) do
+        if type(s) == "table" and s.t == "drop" and s.k ~= "object" and not s.l and not s.loc and s.n then
+            wantedNames[s.n] = true
+        end
+    end
+    for _, list in pairs(GearGuideLearned.sources or {}) do
+        for _, s in ipairs(list) do
+            if s.t == "drop" and s.n and s.n ~= "Container" then wantedNames[s.n] = true end
+        end
+    end
+    -- Names that do have a shipped location don't need spots (learned sources may repeat them).
+    for _, s in pairs(pool) do
+        if type(s) == "table" and s.t == "drop" and s.l and s.n then wantedNames[s.n] = nil end
+    end
+end
+
+local function recordSpot(name)
+    if not name then return end
+    if not wantedNames then buildWanted() end
+    if not wantedNames[name] then return end
+    GearGuideLearned.spots = GearGuideLearned.spots or {}
+    GearGuideLearned.spotZones = GearGuideLearned.spotZones or {}
+    local inInstance = IsInInstance and Plain(IsInInstance())
+    local zoneName = Plain(GetRealZoneText and GetRealZoneText())
+    if zoneName and zoneName ~= "" and not GearGuideLearned.spotZones[name] then
+        GearGuideLearned.spotZones[name] = zoneName
+    end
+    if inInstance or not (C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition) then return end
+    local map = Plain(C_Map.GetBestMapForUnit("player"))
+    local pos = map and C_Map.GetPlayerMapPosition(map, "player")
+    if not pos then return end
+    local x, y = pos:GetXY()
+    x, y = Plain(x), Plain(y)
+    if not x or not y or (x == 0 and y == 0) then return end
+    x, y = math.floor(x * 1000 + 0.5) / 10, math.floor(y * 1000 + 0.5) / 10
+    local byMap = GearGuideLearned.spots[name] or {}
+    GearGuideLearned.spots[name] = byMap
+    local list = byMap[map] or {}
+    byMap[map] = list
+    if #list / 2 >= SPOTS_PER_MAP then return end
+    for i = 1, #list - 1, 2 do
+        if math.abs(list[i] - x) < SPOT_MIN_GAP and math.abs(list[i + 1] - y) < SPOT_MIN_GAP then return end
+    end
+    list[#list + 1], list[#list + 2] = x, y
+end
+ns.RecordCreatureSpot = recordSpot  -- (tests)
+
+-- Targeting a creature up close (about 28 yards) also places it.
+local function onTargetChanged()
+    local name = Plain(UnitName("target"))
+    if not name or Plain(UnitIsPlayer("target")) ~= false then return end
+    if InCombatLockdown and InCombatLockdown() then return end
+    local ok, near = pcall(CheckInteractDistance, "target", 4)
+    if ok and Plain(near) then recordSpot(name) end
+end
+
 local function onLootOpened()
     local z = zone()
+    local spotted = {}
     for i = 1, GetNumLootItems() do
         local link = GetLootSlotLink(i)
         local name, level = lootSource(i)
         if link and name and plausibleDrop(link, level) then
             ns:LearnLink(link, { t = "drop", n = name, z = z })
+        end
+        if name and name ~= "Container" and not spotted[name] then
+            spotted[name] = true
+            recordSpot(name)
         end
     end
 end
@@ -277,6 +356,7 @@ function ns:EnableLearning()
         -- (these events fire constantly; a client-side restriction must not spam the error frame).
         elseif event == "PLAYER_TARGET_CHANGED" then
             pcall(rememberUnit, "target")
+            pcall(onTargetChanged)
         elseif event == "UPDATE_MOUSEOVER_UNIT" then
             pcall(rememberUnit, "mouseover")
         elseif event == "NAME_PLATE_UNIT_ADDED" then

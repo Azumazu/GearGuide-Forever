@@ -235,6 +235,50 @@ def excluded(rec: dict, keep_poor: bool = False) -> str | None:
     return None
 
 
+def learned_spots(saved: Path) -> tuple[dict, dict]:
+    """Creature spots learned in game (Sources.lua): ({name: {uiMapID: [x1, y1, ...]}}, {name: zone name})."""
+    data = LuaTableParser(saved.read_text(encoding="utf-8", errors="replace")).assignments()
+    learned = data.get("GearGuideLearned") or {}
+    spots = {}
+    for name, by_map in as_dict(learned.get("spots")).items():
+        clean = {}
+        for m, flat in as_dict(by_map).items():
+            flat = list(flat.values()) if isinstance(flat, dict) else flat
+            if isinstance(flat, list) and len(flat) >= 2 and all(isinstance(v, (int, float)) for v in flat):
+                clean[int(m)] = flat[: len(flat) // 2 * 2]
+        if clean:
+            spots[str(name)] = clean
+    zones = {str(n): z for n, z in as_dict(learned.get("spotZones")).items() if isinstance(z, str) and z}
+    return spots, zones
+
+
+def apply_spots(items: dict[int, dict], spots: dict, zones: dict) -> int:
+    """Gives creature drop sources without a map location the spots learned in game (pins and
+    areas, like imported locations) and, if they have no zone, the zone name. Returns sources changed."""
+    from import_questie import MAX_LOC_MAPS, MAX_POINTS, _sample, areas
+    changed = 0
+    for rec in items.values():
+        for s in rec.get("src") or []:
+            if not isinstance(s, dict) or s.get("t") != "drop" or s.get("k") == "object" or s.get("loc"):
+                continue
+            name = s.get("n")
+            if name in spots:
+                loc = []
+                for m, flat in sorted(spots[name].items(), key=lambda kv: -len(kv[1]))[:MAX_LOC_MAPS]:
+                    pts = sorted(set(zip(flat[0::2], flat[1::2])))
+                    entry = {"m": m, "p": [c for xy in _sample(pts, MAX_POINTS) for c in xy]}
+                    a = areas(pts)
+                    if a:
+                        entry["a"] = a
+                    loc.append(entry)
+                s["loc"] = loc
+                changed += 1
+            if not s.get("z") and zones.get(name):
+                s["z"] = zones[name]
+                changed += 1
+    return changed
+
+
 def collect(saved: Path, corrections: Path = CORRECTIONS, include_learned: bool = True,
             questie: Path | None = None, keep_poor: bool = False, chances: dict | None = None):
     """Reads a SavedVariables file -> (items, meta, scan_state). Shared by build_db and release."""

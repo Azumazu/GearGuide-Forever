@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.15.0 (2026-11-15)
+
+- World map fix: area outlines (and roaming routes) were drawn underneath the map, so only pins showed. They are now drawn on top of the map, below the pins.
+- Creatures without a known location (mostly WoW: Forever's own creatures, e.g. Nar'gurk) are now placed on the map once you loot one or target one up close, and get their zone name. In dungeons the dungeon's name is shown. Future GearGuide updates will include these locations for everyone.
+
 ## 0.14.1 (2026-11-15)
 
 - World map: chests now also show the areas where they can be found (shaded and outlined, one pin in the middle) instead of a pin on every spawn. Chests of the same kind are combined, so the areas cover all of them.

@@ -27,6 +27,7 @@ local MAX_TRIANGLES = 240
 local pins, active = {}, nil   -- active = { map = uiMapID, points = {...}, routes = {...}, title, kind, sub }
 local lines = {}
 local triangles = {}
+local drawn = {}  -- what the last refresh drew (for /gg dev)
 local watcher
 
 local function canvas()
@@ -85,13 +86,30 @@ local function hideAll()
     hideTriangles()
 end
 
--- One straight piece of a walking route. Lines need Frame:CreateLine (modern clients); without it
--- the route simply isn't drawn and the pins still show.
-local function getLine(i, parent)
+-- Routes, area outlines and area fills are drawn on one overlay frame above the map tiles (and
+-- below the pins). Drawn on the canvas itself they end up underneath the map's tile frames.
+local overlay
+local function getOverlay(c)
+    if not overlay then
+        overlay = CreateFrame("Frame", nil, c)
+    end
+    if overlay:GetParent() ~= c then overlay:SetParent(c) end
+    overlay:ClearAllPoints()
+    overlay:SetAllPoints(c)
+    overlay:SetFrameLevel((c:GetFrameLevel() or 1) + 15)
+    overlay:Show()
+    return overlay
+end
+
+-- One straight piece of a route or area outline. Lines need Frame:CreateLine (modern clients);
+-- without it they simply aren't drawn and the pins still show.
+local function getLine(i, c)
+    local parent = getOverlay(c)
     local line = lines[i]
     if not line then
         if not parent.CreateLine then return nil end
-        line = parent:CreateLine(nil, "ARTWORK")
+        line = parent:CreateLine(nil, "OVERLAY")
+        if not line then return nil end
         line:SetColorTexture(LINE_COLOR[1], LINE_COLOR[2], LINE_COLOR[3], LINE_COLOR[4])
         lines[i] = line
     end
@@ -111,8 +129,8 @@ local function drawPaths(c, w, h, paths, closed, n)
             if not line then return n end
             n = n + 1
             line:SetThickness(thickness)
-            line:SetStartPoint("TOPLEFT", c, a.x * w, -a.y * h)
-            line:SetEndPoint("TOPLEFT", c, b.x * w, -b.y * h)
+            line:SetStartPoint("TOPLEFT", overlay, a.x * w, -a.y * h)
+            line:SetEndPoint("TOPLEFT", overlay, b.x * w, -b.y * h)
             line:Show()
         end
     end
@@ -125,23 +143,17 @@ local function drawRoutes(c, w, h)
         n = drawPaths(c, w, h, active.routes, false, n)
     end
     hideLines(n + 1)
+    drawn.lines = n
 end
 
 -- A filled triangle: a plain texture over the triangle's bounding box with its four corners moved
 -- onto the triangle (two share a point). Needs Texture:SetVertexOffset (modern clients); without
 -- it areas are only outlined.
-local fillLayer  -- frame over the map tiles (below the pins) that holds the area fills
 local function getTriangle(i, c)
-    if not fillLayer then
-        fillLayer = CreateFrame("Frame", nil, c)
-        fillLayer:SetAllPoints(c)
-    end
-    if fillLayer:GetParent() ~= c then fillLayer:SetParent(c); fillLayer:SetAllPoints(c) end
-    fillLayer:SetFrameLevel((c:GetFrameLevel() or 1) + 15)
-    fillLayer:Show()
+    local layer = getOverlay(c)
     local t = triangles[i]
     if not t then
-        t = fillLayer:CreateTexture(nil, "ARTWORK")
+        t = layer:CreateTexture(nil, "ARTWORK")
         t:SetColorTexture(AREA_FILL[1], AREA_FILL[2], AREA_FILL[3], AREA_FILL[4])
         triangles[i] = t
     end
@@ -152,7 +164,7 @@ local function drawTriangle(t, c, ax, ay, bx, by, cx, cy)  -- canvas units, y po
     local minX, maxX = math.min(ax, bx, cx), math.max(ax, bx, cx)
     local minY, maxY = math.min(ay, by, cy), math.max(ay, by, cy)
     t:ClearAllPoints()
-    t:SetPoint("TOPLEFT", fillLayer, "TOPLEFT", minX, -minY)
+    t:SetPoint("TOPLEFT", overlay, "TOPLEFT", minX, -minY)
     t:SetSize(math.max(1, maxX - minX), math.max(1, maxY - minY))
     -- corners: 1 upper left, 2 lower left, 3 upper right, 4 lower right; offsets have y pointing up
     t:SetVertexOffset(1, ax - minX, -(ay - minY))
@@ -163,7 +175,7 @@ local function drawTriangle(t, c, ax, ay, bx, by, cx, cy)  -- canvas units, y po
 end
 
 local function drawAreaFills(c, w, h)
-    local n = 0
+    local n, failed = 0, 0
     for _, poly in ipairs(active.areas or {}) do
         local mx, my = 0, 0  -- areas are convex: a fan of triangles from the middle
         for _, p in ipairs(poly) do mx, my = mx + p.x, my + p.y end
@@ -172,12 +184,14 @@ local function drawAreaFills(c, w, h)
             if n >= MAX_TRIANGLES then break end
             local a, b = poly[i], poly[i % #poly + 1]
             local t = getTriangle(n + 1, c)
-            if not t.SetVertexOffset then hideTriangles() return end
+            if not t.SetVertexOffset then hideTriangles(); drawn.fill = "no SetVertexOffset" return end
             n = n + 1
-            if not pcall(drawTriangle, t, c, mx, my, a.x * w, a.y * h, b.x * w, b.y * h) then t:Hide() end
+            local ok, err = pcall(drawTriangle, t, c, mx, my, a.x * w, a.y * h, b.x * w, b.y * h)
+            if not ok then t:Hide(); failed = failed + 1; drawn.fillError = drawn.fillError or tostring(err) end
         end
     end
     hideTriangles(n + 1)
+    drawn.triangles, drawn.failed = n - failed, failed
 end
 
 -- Places pins when the displayed map is the one we want; called on a light timer while the map is open.
@@ -307,7 +321,14 @@ function ns:ShowOnMap(loc)
     if not (GearGuideDB and GearGuideDB.map and GearGuideDB.map.waypoint == false) then
         setWaypoint(loc.map, loc.pins[1] or loc.routes[1][1], loc.title)  -- the biggest area first
     end
+    wipe(drawn)
     refreshPins()
+    if GearGuideDB and GearGuideDB.maintainer then
+        ns.Print(string.format("Map: %d area(s), %d pin(s); drew %s filled triangles, %s outline/route lines%s%s",
+            #(loc.areas or {}), #loc.pins, tostring(drawn.triangles or 0), tostring(drawn.lines or 0),
+            drawn.fill and (", fill: " .. drawn.fill) or "",
+            drawn.failed and drawn.failed > 0 and (", " .. drawn.failed .. " failed: " .. drawn.fillError) or ""))
+    end
     return true
 end
 
