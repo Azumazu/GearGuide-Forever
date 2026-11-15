@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.1 (2026-11-15)
+
+- World map: chests now also show the areas where they can be found (shaded and outlined, one pin in the middle) instead of a pin on every spawn. Chests of the same kind are combined, so the areas cover all of them.
+- Very spread-out spawns no longer turn into one huge area covering most of a zone: those are split into smaller areas or stay as pins.
+
 ## 0.14.0 (2026-11-15)
 
 - Raid loot: 481 raid and world boss items that were missing from the database are now included, e.g. Perdition's Blade and Bonereaver's Edge (Ragnaros), with their drop chances. Only loot that drops exclusively in raids or from world bosses was added, listed only under those bosses and creatures.

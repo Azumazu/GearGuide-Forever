@@ -307,15 +307,15 @@ def _hull(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
     return lower[:-1] + upper[:-1]
 
 
-def areas(points: list[tuple[float, float]]) -> list[list[float]]:
-    """Groups nearby spawn points and outlines each group: [[x1, y1, x2, y2, ...], ...], biggest
-    group first. Each outline is the convex hull of the spawns padded by AREA_PAD (a rounded shape),
-    so the map can shade where a creature lives instead of pinning every spawn."""
+MAX_AREA_SPAN = 25.0  # an area wider or taller than this (map units) is split or left as pins
+MIN_AREA_LINK = 3.0   # tightest grouping tried when splitting
+
+
+def _groups(pts: list[tuple[float, float]], link: float) -> list[list[tuple[float, float]]]:
+    """Single-linkage grouping: points closer than `link` (directly or through others) group together."""
     import math
-    pts = sorted(set(points))
-    groups: list[list[tuple[float, float]]] = []
-    seen: set = set()
-    for start in pts:  # single-linkage grouping (flood fill over the "close enough" graph)
+    groups, seen = [], set()
+    for start in pts:
         if start in seen:
             continue
         seen.add(start)
@@ -324,14 +324,39 @@ def areas(points: list[tuple[float, float]]) -> list[list[float]]:
             p = todo.pop()
             group.append(p)
             for q in pts:
-                if q not in seen and math.dist(p, q) <= AREA_LINK:
+                if q not in seen and math.dist(p, q) <= link:
                     seen.add(q)
                     todo.append(q)
         groups.append(group)
+    return groups
+
+
+def _span(group: list[tuple[float, float]]) -> float:
+    xs, ys = [p[0] for p in group], [p[1] for p in group]
+    return max(max(xs) - min(xs), max(ys) - min(ys))
+
+
+def _compact_groups(pts, link):
+    """Groups no wider than MAX_AREA_SPAN: a group that is too wide (spawns scattered along a long
+    chain, e.g. chests all over a zone) is regrouped more tightly; if even the tightest grouping
+    leaves it too wide, it gets no area and its spawns stay pins."""
+    out = []
+    for group in _groups(pts, link):
+        if _span(group) <= MAX_AREA_SPAN:
+            out.append(group)
+        elif link * 0.6 >= MIN_AREA_LINK:
+            out.extend(_compact_groups(group, link * 0.6))
+    return out
+
+
+def areas(points: list[tuple[float, float]]) -> list[list[float]]:
+    """Groups nearby spawn points and outlines each group: [[x1, y1, x2, y2, ...], ...], biggest
+    group first. Each outline is the convex hull of the spawns padded by AREA_PAD (a rounded shape),
+    so the map can shade where a creature or chest is found instead of pinning every spawn."""
+    import math
+    groups = [g for g in _compact_groups(sorted(set(points)), AREA_LINK) if len(g) >= AREA_MIN_SPAWNS]
     out = []
     for group in sorted(groups, key=len, reverse=True)[:MAX_AREAS]:
-        if len(group) < AREA_MIN_SPAWNS:
-            continue
         ring = [(x + AREA_PAD * math.cos(a * math.pi / 4), y + AREA_PAD * math.sin(a * math.pi / 4))
                 for x, y in group for a in range(8)]
         hull = [(min(100.0, max(0.0, round(x, 1))), min(100.0, max(0.0, round(y, 1)))) for x, y in _hull(ring)]
@@ -522,17 +547,27 @@ def item_sources(store: QuestieStore, iid: int, zones: ZoneData | None = None,
     if len(npcs) > MAX_DROP_NPCS:
         out.append({"t": "drop", "n": f"... and {len(npcs) - MAX_DROP_NPCS} more creatures"})
 
-    chests: dict[str, list] = {}
+    # Same-named chests (every "Solid Chest" object) become one source. Their raw spawn tables are
+    # combined before building the location, so the map areas cover every spawn of every one of them.
+    chests: dict[str, dict] = {}
+    chest_count: dict[str, int] = {}
     chest_dc: dict[str, float] = {}
     for oid in id_list(store.field("Item", iid, ITEM_OBJECT_DROPS)):
         name = store.name("Object", oid)
         if name:
-            chests.setdefault(name, []).append(location(zones, store.field("Object", oid, OBJECT_SPAWNS)))
+            chest_count[name] = chest_count.get(name, 0) + 1
+            combined = chests.setdefault(name, {})
+            spawns = store.field("Object", oid, OBJECT_SPAWNS)
+            if isinstance(spawns, list):
+                spawns = {i + 1: v for i, v in enumerate(spawns)}
+            for area, pts in (spawns or {}).items() if isinstance(spawns, dict) else ():
+                if isinstance(pts, list):
+                    combined.setdefault(area, []).extend(pts)
             dc = ((chances or {}).get("object", {}).get(oid) or {}).get(iid)
             if dc:  # same-named chests can differ (e.g. by zone): show the best one
                 chest_dc[name] = max(dc, chest_dc.get(name, 0))
-    for name, locs in sorted(chests.items(), key=lambda kv: -len(kv[1]))[:MAX_CHEST_KINDS]:
-        out.append({"t": "drop", "n": name, "loc": merge_locations(locs), "k": "object", "dc": chest_dc.get(name)})
+    for name in sorted(chests, key=lambda n: -chest_count[n])[:MAX_CHEST_KINDS]:
+        out.append({"t": "drop", "n": name, "loc": location(zones, chests[name]), "k": "object", "dc": chest_dc.get(name)})
 
     for cid in id_list(store.field("Item", iid, ITEM_ITEM_DROPS))[:MAX_SOURCES_PER_KIND]:
         name = store.name("Item", cid)
