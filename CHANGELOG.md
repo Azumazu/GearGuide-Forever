@@ -2,19 +2,15 @@
 
 ## 0.16.2 (2026-11-15)
 
-- Random bonus items ("...of the Falcon", "...of the Monkey"): looting one now counts as a drop of the base item (e.g. Cross Dagger), so its source and location are recorded there.
-- Items that drop with a random bonus have a new "Random variants" section in the item details: every possible bonus with its stats, its score for the spec you're browsing and how often it drops, best for you first. Covers 1,671 items.
-- Game tooltips of a random bonus item now say which item it's a variant of and how often that bonus drops.
-- Gear browser: searching for an item's full name with its bonus (e.g. "Cross Dagger of the Falcon") finds the base item.
-- Loot is now also recorded when auto loot empties the loot window before it opens, which lost some drops before.
+- Random bonus items (e.g. Cross Dagger "of the Falcon" or "of the Monkey"): looting one now counts as a drop of the base item, so the creature and its map location are recorded there. The item details have a new "Random variants" section with every possible bonus, its stats, its score for your spec and how often it drops, best for you first (1,671 items).
+- Game tooltips of a random bonus item now show which item it's a variant of and how often that bonus drops.
+- Gear browser: searching for an item's full name with its bonus (e.g. "Cross Dagger of the Falcon") now finds the base item.
+- Loot fix: drops are now recorded with auto loot on. Before, auto loot could empty the loot window before GearGuide read it, and the drop was lost.
+- World map fix: clearing GearGuide's pins no longer removes your own map waypoint.
+- Tooltip fix: item tooltips in the GearGuide window no longer jump when the item finishes loading.
+- Removed item sources without a usable name ("Unknown", "Container" or empty). Creature tooltips now list the same sources as the item details.
+- Smaller fixes: scores from custom stat weights are labeled "Custom", the Gear Acquired preview in Settings no longer replaces a real pop-up, and /gg forget also clears shared sources and learned variants.
 - Cross Dagger: added Nightbane Dark Runner (Duskwood) as a source.
-- Sources without a usable name ("Unknown", "Container", empty) are removed and no longer recorded.
-- Creature tooltips now use the same source list as the item details.
-- Clearing GearGuide's map pins no longer removes your own map waypoint, and the map no longer keeps checking for pins after they're cleared.
-- Item tooltips in the GearGuide window no longer jump when the item finishes loading.
-- Custom stat weights: scores using them are now labeled "Custom".
-- The "Gear Acquired" preview in Settings no longer replaces a real pop-up that was showing.
-- `/gg forget` now also clears shared sources and learned variants.
 
 ## 0.16.1 (2026-11-15)
 
