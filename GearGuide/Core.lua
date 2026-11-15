@@ -18,6 +18,7 @@ local defaults = {
              hoverMode = false },
     minQuality = 2,   -- lowest item quality recommended (2 = Uncommon)
     map = { routes = true, waypoint = true },  -- draw patrol routes; set a waypoint arrow (game / TomTom)
+    creatureTips = true,  -- list the gear a creature drops on its tooltip
 }
 
 local function applyDefaults(dst, src)
@@ -373,6 +374,12 @@ function ns:ShowSourceOnMap(s)
         for i = 1, #r - 1, 2 do route[#route + 1] = { x = r[i] / 100, y = r[i + 1] / 100 } end
         if #route > 1 then routes[#routes + 1] = route end
     end
+    local areas = {}
+    for _, flat in ipairs(entry.a or {}) do
+        local poly = {}
+        for i = 1, #flat - 1, 2 do poly[#poly + 1] = { x = flat[i] / 100, y = flat[i + 1] / 100 } end
+        if #poly >= 3 then areas[#areas + 1] = poly end
+    end
     local kind = entry.e and "entrance" or (s.k == "object" and "object") or s.t
     local sub = ns.FormatSource(s)
     if entry.e then sub = sub .. " - dungeon entrance" end
@@ -381,7 +388,8 @@ function ns:ShowSourceOnMap(s)
         sub = sub .. (#points > 0 and (" - " .. who .. " the marked route") or " - passes through here on the marked route")
     end
     if #s.loc > 1 then sub = sub .. string.format("  (location %d of %d, click again for the next)", lastIndex, #s.loc) end
-    self:ShowOnMap({ map = entry.m, points = points, routes = routes, title = s.n, sub = sub, kind = kind })
+    if #areas > 0 then sub = sub .. (#areas > 1 and " - lives in the shaded areas" or " - lives in the shaded area") end
+    self:ShowOnMap({ map = entry.m, points = points, routes = routes, areas = areas, title = s.n, sub = sub, kind = kind })
 end
 
 function ns:SourceSummary(id)
@@ -640,6 +648,7 @@ end
 function ns:RequestRefresh()
     if self.refreshPending then return end
     self.refreshPending = true
+    if self.InvalidateCreatureTips then self:InvalidateCreatureTips() end  -- upgrades may have changed
     C_Timer.After(0.3, function()
         ns.refreshPending = false
         if ns.RefreshUI then ns:RefreshUI() end
@@ -697,6 +706,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
         ns:StartTracking()
         ns:InitHarvest()
         ns:StartComm()
+        if ns.EnableCreatureTips then ns:EnableCreatureTips() end
         if GearGuideDB.mini.shown then ns:ShowMini() end
         ns:CheckDatabaseBuild()
         if ns.dbTooNew then

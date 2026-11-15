@@ -1,7 +1,8 @@
 local _, ns = ...
 
 -- Shows where an item comes from on the world map: opens the map on the right zone and draws
--- GearGuide pins (creature / boss / vendor / quest giver / chest / dungeon entrance) at each spawn.
+-- GearGuide pins (creature / boss / vendor / quest giver / chest / dungeon entrance). Where a creature
+-- spawns in groups, the whole area it lives in is shaded and outlined, with one pin in its middle.
 -- Optional extras, only when available: the game's own user waypoint (arrow + minimap) and TomTom.
 -- Pins live on the world map canvas and only show while that map is displayed.
 
@@ -20,9 +21,12 @@ local ICONS = {
 local MAX_SEGMENTS = 400
 local LINE_WIDTH = 3
 local LINE_COLOR = { 0.86, 0.65, 0.5, 0.85 }  -- skin accent
+local AREA_FILL = { 0.86, 0.65, 0.5, 0.22 }
+local MAX_TRIANGLES = 240
 
 local pins, active = {}, nil   -- active = { map = uiMapID, points = {...}, routes = {...}, title, kind, sub }
 local lines = {}
+local triangles = {}
 local watcher
 
 local function canvas()
@@ -71,9 +75,14 @@ local function hideLines(from)
     for i = from or 1, #lines do lines[i]:Hide() end
 end
 
+local function hideTriangles(from)
+    for i = from or 1, #triangles do triangles[i]:Hide() end
+end
+
 local function hideAll()
     for _, pin in ipairs(pins) do pin:Hide() end
     hideLines()
+    hideTriangles()
 end
 
 -- One straight piece of a walking route. Lines need Frame:CreateLine (modern clients); without it
@@ -89,16 +98,17 @@ local function getLine(i, parent)
     return line
 end
 
-local function drawRoutes(c, w, h)
-    if GearGuideDB and GearGuideDB.map and GearGuideDB.map.routes == false then hideLines() return end
-    local n = 0
+-- Draws the paths (lists of {x, y}) as lines; closed = also join the last point to the first.
+-- Returns the number of lines used so far (continuing from `n`).
+local function drawPaths(c, w, h, paths, closed, n)
     local thickness = LINE_WIDTH / canvasScale()  -- same on-screen width at every zoom level
-    for _, route in ipairs(active.routes or {}) do
-        for i = 1, #route - 1 do
-            if n >= MAX_SEGMENTS then break end
-            local a, b = route[i], route[i + 1]
+    for _, path in ipairs(paths or {}) do
+        local count = #path
+        for i = 1, closed and count or count - 1 do
+            if n >= MAX_SEGMENTS then return n end
+            local a, b = path[i], path[i % count + 1]
             local line = getLine(n + 1, c)
-            if not line then return end
+            if not line then return n end
             n = n + 1
             line:SetThickness(thickness)
             line:SetStartPoint("TOPLEFT", c, a.x * w, -a.y * h)
@@ -106,7 +116,68 @@ local function drawRoutes(c, w, h)
             line:Show()
         end
     end
+    return n
+end
+
+local function drawRoutes(c, w, h)
+    local n = drawPaths(c, w, h, active.areas, true, 0)  -- area outlines always show
+    if not (GearGuideDB and GearGuideDB.map and GearGuideDB.map.routes == false) then
+        n = drawPaths(c, w, h, active.routes, false, n)
+    end
     hideLines(n + 1)
+end
+
+-- A filled triangle: a plain texture over the triangle's bounding box with its four corners moved
+-- onto the triangle (two share a point). Needs Texture:SetVertexOffset (modern clients); without
+-- it areas are only outlined.
+local fillLayer  -- frame over the map tiles (below the pins) that holds the area fills
+local function getTriangle(i, c)
+    if not fillLayer then
+        fillLayer = CreateFrame("Frame", nil, c)
+        fillLayer:SetAllPoints(c)
+    end
+    if fillLayer:GetParent() ~= c then fillLayer:SetParent(c); fillLayer:SetAllPoints(c) end
+    fillLayer:SetFrameLevel((c:GetFrameLevel() or 1) + 15)
+    fillLayer:Show()
+    local t = triangles[i]
+    if not t then
+        t = fillLayer:CreateTexture(nil, "ARTWORK")
+        t:SetColorTexture(AREA_FILL[1], AREA_FILL[2], AREA_FILL[3], AREA_FILL[4])
+        triangles[i] = t
+    end
+    return t
+end
+
+local function drawTriangle(t, c, ax, ay, bx, by, cx, cy)  -- canvas units, y pointing down
+    local minX, maxX = math.min(ax, bx, cx), math.max(ax, bx, cx)
+    local minY, maxY = math.min(ay, by, cy), math.max(ay, by, cy)
+    t:ClearAllPoints()
+    t:SetPoint("TOPLEFT", fillLayer, "TOPLEFT", minX, -minY)
+    t:SetSize(math.max(1, maxX - minX), math.max(1, maxY - minY))
+    -- corners: 1 upper left, 2 lower left, 3 upper right, 4 lower right; offsets have y pointing up
+    t:SetVertexOffset(1, ax - minX, -(ay - minY))
+    t:SetVertexOffset(2, bx - minX, -(by - maxY))
+    t:SetVertexOffset(3, cx - maxX, -(cy - minY))
+    t:SetVertexOffset(4, cx - maxX, -(cy - maxY))
+    t:Show()
+end
+
+local function drawAreaFills(c, w, h)
+    local n = 0
+    for _, poly in ipairs(active.areas or {}) do
+        local mx, my = 0, 0  -- areas are convex: a fan of triangles from the middle
+        for _, p in ipairs(poly) do mx, my = mx + p.x, my + p.y end
+        mx, my = mx / #poly * w, my / #poly * h
+        for i = 1, #poly do
+            if n >= MAX_TRIANGLES then break end
+            local a, b = poly[i], poly[i % #poly + 1]
+            local t = getTriangle(n + 1, c)
+            if not t.SetVertexOffset then hideTriangles() return end
+            n = n + 1
+            if not pcall(drawTriangle, t, c, mx, my, a.x * w, a.y * h, b.x * w, b.y * h) then t:Hide() end
+        end
+    end
+    hideTriangles(n + 1)
 end
 
 -- Places pins when the displayed map is the one we want; called on a light timer while the map is open.
@@ -118,8 +189,10 @@ local function refreshPins()
     local w, h = c:GetWidth(), c:GetHeight()
     local scale = 1 / canvasScale()  -- keep pins the same size when zooming
     local icon = ICONS[active.kind] or ICONS.drop
+    drawAreaFills(c, w, h)
     drawRoutes(c, w, h)
-    for i, p in ipairs(active.points) do
+    local shown = active.pins or active.points
+    for i, p in ipairs(shown) do
         if i > MAX_PINS then break end
         local pin = getPin(i, c)
         pin:SetScale(scale)
@@ -129,8 +202,40 @@ local function refreshPins()
         pin:SetFrameLevel((c:GetFrameLevel() or 1) + 20)
         pin:Show()
     end
-    for i = #active.points + 1, #pins do pins[i]:Hide() end
+    for i = math.min(#shown, MAX_PINS) + 1, #pins do pins[i]:Hide() end
 end
+
+-- Is p inside the polygon (list of {x, y})? Ray casting.
+local function inside(p, poly)
+    local hit, j = false, #poly
+    for i = 1, #poly do
+        local a, b = poly[i], poly[j]
+        if (a.y > p.y) ~= (b.y > p.y) and p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x then
+            hit = not hit
+        end
+        j = i
+    end
+    return hit
+end
+
+-- Pins to draw: one in the middle of each area (biggest first), then every spawn outside the areas.
+local function pinPoints(loc)
+    local out = {}
+    for _, poly in ipairs(loc.areas or {}) do
+        local mx, my = 0, 0
+        for _, p in ipairs(poly) do mx, my = mx + p.x, my + p.y end
+        out[#out + 1] = { x = mx / #poly, y = my / #poly }
+    end
+    for _, p in ipairs(loc.points or {}) do
+        local covered = false
+        for _, poly in ipairs(loc.areas or {}) do
+            if inside(p, poly) then covered = true break end
+        end
+        if not covered then out[#out + 1] = p end
+    end
+    return out
+end
+ns.MapPinPoints = pinPoints  -- (tests)
 
 local function startWatcher()
     if watcher then return end
@@ -183,10 +288,12 @@ end
 
 -- loc = { map = uiMapID, points = { {x = 0..1, y = 0..1}, ... }, title = "Old Serra'kis",
 --         sub = "Drop · Blackfathom Deeps (entrance)", kind = "drop"|"boss"|"vendor"|"quest"|"object"|"entrance",
---         routes = { { {x, y}, {x, y}, ... }, ... } (optional: a roaming NPC's walking paths) }
+--         routes = { { {x, y}, {x, y}, ... }, ... } (optional: a roaming NPC's walking paths),
+--         areas = { { {x, y}, ... }, ... } (optional: convex outlines of where it spawns) }
 function ns:ShowOnMap(loc)
     local hasRoute = loc and loc.routes and loc.routes[1] and loc.routes[1][1]
-    if not loc or not loc.map or not loc.points or (#loc.points == 0 and not hasRoute) then
+    if loc and loc.points then loc.pins = pinPoints(loc) end
+    if not loc or not loc.map or not loc.points or (#loc.pins == 0 and not hasRoute) then
         ns.Print("No map location is known for this source yet.")
         return false
     end
@@ -198,7 +305,7 @@ function ns:ShowOnMap(loc)
     openMap(loc.map)
     startWatcher()
     if not (GearGuideDB and GearGuideDB.map and GearGuideDB.map.waypoint == false) then
-        setWaypoint(loc.map, loc.points[1] or loc.routes[1][1], loc.title)
+        setWaypoint(loc.map, loc.pins[1] or loc.routes[1][1], loc.title)  -- the biggest area first
     end
     refreshPins()
     return true

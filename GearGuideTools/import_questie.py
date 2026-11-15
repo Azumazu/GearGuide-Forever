@@ -280,6 +280,65 @@ def _sample(points: list, limit: int) -> list:
     return [points[int(i * step)] for i in range(limit)]
 
 
+AREA_LINK = 7.0       # spawns closer than this (map units, 0-100) belong to the same area
+AREA_MIN_SPAWNS = 3   # fewer spawns than this: plain pins, no area
+AREA_PAD = 2.0        # area edge distance around the outermost spawns
+MAX_AREAS = 8         # areas kept per map (most spawns first)
+
+
+def _hull(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Convex hull (monotone chain), counter-clockwise, no repeated end point."""
+    pts = sorted(set(points))
+    if len(pts) < 3:
+        return pts
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower, upper = [], []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
+
+
+def areas(points: list[tuple[float, float]]) -> list[list[float]]:
+    """Groups nearby spawn points and outlines each group: [[x1, y1, x2, y2, ...], ...], biggest
+    group first. Each outline is the convex hull of the spawns padded by AREA_PAD (a rounded shape),
+    so the map can shade where a creature lives instead of pinning every spawn."""
+    import math
+    pts = sorted(set(points))
+    groups: list[list[tuple[float, float]]] = []
+    seen: set = set()
+    for start in pts:  # single-linkage grouping (flood fill over the "close enough" graph)
+        if start in seen:
+            continue
+        seen.add(start)
+        group, todo = [], [start]
+        while todo:
+            p = todo.pop()
+            group.append(p)
+            for q in pts:
+                if q not in seen and math.dist(p, q) <= AREA_LINK:
+                    seen.add(q)
+                    todo.append(q)
+        groups.append(group)
+    out = []
+    for group in sorted(groups, key=len, reverse=True)[:MAX_AREAS]:
+        if len(group) < AREA_MIN_SPAWNS:
+            continue
+        ring = [(x + AREA_PAD * math.cos(a * math.pi / 4), y + AREA_PAD * math.sin(a * math.pi / 4))
+                for x, y in group for a in range(8)]
+        hull = [(min(100.0, max(0.0, round(x, 1))), min(100.0, max(0.0, round(y, 1)))) for x, y in _hull(ring)]
+        out.append([c for xy in hull for c in xy])
+    return out
+
+
 def location(zones: ZoneData, spawns) -> list[dict] | None:
     """Spawn table {area: [[x, y, phase?], ...]} -> [{m: uiMapID, p: [x1, y1, ...], e: dungeonArea?}, ...]."""
     if isinstance(spawns, list):
@@ -313,6 +372,10 @@ def location(zones: ZoneData, spawns) -> list[dict] | None:
         entry = {"m": m, "p": flat}
         if dungeon_area:
             entry["e"] = dungeon_area  # these points are the dungeon's entrance(s)
+        else:
+            a = areas(pts)  # from every spawn, not just the sampled pins
+            if a:
+                entry["a"] = a
         out.append(entry)
     return out
 

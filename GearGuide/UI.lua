@@ -918,6 +918,9 @@ local function updateStatus()
         parts[#parts + 1] = string.format("Database: %d items (%s%s)", db, tostring(meta.version or meta.generated or "?"),
             (ns.dbOutdated and GearGuideDB.maintainer) and ", older game build" or "")
     end
+    if ns.newerVersion then
+        parts[#parts + 1] = string.format("|cffffd100GearGuide %s is out, please update|r", ns.newerVersion)
+    end
     if scanned > 0 then parts[#parts + 1] = string.format("scanned: %d", scanned) end
     parts[#parts + 1] = string.format("learned in game: %d", learned)
     if db == 0 and scanned == 0 then parts[#parts + 1] = "type /gg scan to build the database" end

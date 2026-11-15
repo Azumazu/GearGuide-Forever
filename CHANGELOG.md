@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.0 (2026-11-15)
+
+- Creature tooltips: mouse over a creature to see which of your recommended and favorite items it drops, with the drop chance and the score gain over what you have equipped (favorites are marked with a star). Can be turned off in Settings.
+- World map: creatures that spawn in groups now have the whole area they live in shaded and outlined, with one pin in the middle, instead of a pin on every spawn.
+- Update notice: when a guild or group member uses a newer GearGuide, you get a one-time message in chat (and a note in the window footer) telling you to update. Works from this version on, and only with source sharing turned on.
+
 ## 0.12.1 (2026-11-14)
 
 - Fixed raid gear showing up as a drop from low level creatures (e.g. Molten Core rings "dropped" by a Stonetusk Boar in Elwynn Forest). Loot from a bag or other container was credited to whatever dead creature you had targeted, and then shared with other GearGuide users. GearGuide now only learns loot from the creature it really came from, ignores gear far above that creature's level, and hides such wrong entries already learned or shared.

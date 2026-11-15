@@ -193,6 +193,11 @@ function ns:CreateSettingsPanel(parent)
         function() return GearGuideDB.showUnknown end,
         function(on) ns:SetShowUnknown(on) end,
         "Items nobody has found a source for yet. Favorites always show.")
+    panel.creatureTips = check("Show gear drops on creature tooltips",
+        function() return GearGuideDB.creatureTips end,
+        function(on) GearGuideDB.creatureTips = on and true or false end,
+        "Mouse over a creature to see which of your recommended and favorite items it drops, with the drop chance "
+        .. "and the score gain over what you have equipped.")
 
     -- Recommendations ----------------------------------------------------------
     section("Recommendations", "also used by the mini tracker")
