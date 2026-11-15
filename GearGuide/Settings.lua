@@ -259,7 +259,8 @@ function ns:CreateSettingsPanel(parent)
     panel.waypoint = check("Set a waypoint arrow",
         function() return GearGuideDB.map.waypoint ~= false end,
         function(on) GearGuideDB.map.waypoint = on end,
-        "Marks the spot with the game's waypoint (and TomTom's arrow, if you have TomTom).")
+        "Also places the game's own map pin and navigation arrow on the spot (and TomTom's arrow, if you "
+        .. "have TomTom). Off by default: GearGuide's shaded areas and pins already show where to go.")
 
     body:SetHeight(y + 8)
 

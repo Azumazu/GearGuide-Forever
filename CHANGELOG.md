@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.2 (2026-11-15)
+
+- Opening a source on the map no longer also places the game's own map pin and waypoint arrow: GearGuide's shaded areas and pins show where to go. You can turn the game's waypoint back on in Settings ("Set a waypoint arrow").
+
 ## 0.15.1 (2026-11-15)
 
 - World map fix: shaded areas and outlines were still hidden behind the map's own layers. They are now placed above everything the map draws, with GearGuide's pins on top.

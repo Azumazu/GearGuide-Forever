@@ -17,7 +17,7 @@ local defaults = {
     mini = { shown = false, count = 10, hideCompleted = false, autoPopup = true, opacity = 1, pvpHide = true, scale = 1,
              hoverMode = false },
     minQuality = 2,   -- lowest item quality recommended (2 = Uncommon)
-    map = { routes = true, waypoint = true },  -- draw patrol routes; set a waypoint arrow (game / TomTom)
+    map = { routes = true, waypoint = false },  -- draw patrol routes; set a waypoint arrow (game / TomTom)
     creatureTips = true,  -- list the gear a creature drops on its tooltip
 }
 
@@ -695,6 +695,12 @@ events:SetScript("OnEvent", function(_, event, arg1)
     if event == "ADDON_LOADED" and arg1 == addonName then
         GearGuideDB = GearGuideDB or {}
         applyDefaults(GearGuideDB, defaults)
+        -- 0.15.2: the map shades whole areas now, so the game's waypoint pin is off by default
+        -- (it was on before). Once; the Settings checkbox turns it back on.
+        if not GearGuideDB.waypointDefaultOff then
+            GearGuideDB.waypointDefaultOff = true
+            GearGuideDB.map.waypoint = false
+        end
         GearGuideLearned = GearGuideLearned or {}
         GearGuideLearned.items = GearGuideLearned.items or {}
         GearGuideLearned.sources = GearGuideLearned.sources or {}
