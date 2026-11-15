@@ -23,6 +23,14 @@ CREDITS = "Vendor prices include data from the cmangos classic-db project (GPL-3
 TOKEN = re.compile(r"'((?:[^'\\]|\\.)*)'|(NULL)|(-?\d+(?:\.\d+)?(?:e[+-]?\d+)?)|([(),])", re.I)
 
 
+_ESCAPES = {"n": "\n", "r": "", "t": "\t", "0": ""}
+
+
+def _unescape(s: str) -> str:
+    """mysqldump string escapes (backslash + quote, backslash, n, ...) -> plain text."""
+    return re.sub(r"\\(.)", lambda m: _ESCAPES.get(m.group(1), m.group(1)), s) if "\\" in s else s
+
+
 def _rows(values: str):
     """Yields each (...) tuple of an INSERT ... VALUES list as a list of Python values."""
     row = None
@@ -42,7 +50,7 @@ def _rows(values: str):
             elif num is not None:
                 row.append(float(num) if "." in num or "e" in num.lower() else int(num))
             else:
-                row.append(s)
+                row.append(_unescape(s))
 
 
 def _columns(create: str) -> list[str]:

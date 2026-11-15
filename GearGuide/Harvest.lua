@@ -319,7 +319,58 @@ function ns:AutoScanIfEmpty()
 end
 
 -- Called by Core at PLAYER_LOGIN: resume an interrupted scan, or start the first one.
+---------------------------------------------------------------------------
+-- Provisional items: raid loot the build added from cmangos without stats (Data.lua pv = 1).
+-- Each one is asked from the client in the background; the client's record (WoW: Forever's real
+-- stats) goes into GearGuideHarvest.items, which makes the item show. Items the client doesn't
+-- know stay hidden. One request per tick, out of combat, and each item only a few times a session.
+---------------------------------------------------------------------------
+local VERIFY_INTERVAL = 0.25
+local VERIFY_TRIES = 3
+local verifyTicker
+function ns:VerifyProvisional()
+    if verifyTicker or not getInstant then return end
+    local queue, tries, confirmed, unknown = {}, {}, 0, 0
+    for id, item in pairs(GearGuide_Data.items or {}) do
+        if item.pv and not GearGuideHarvest.items[id] then queue[#queue + 1] = id end
+    end
+    if #queue == 0 then return end
+    table.sort(queue)
+    local pos = 1
+    verifyTicker = C_Timer.NewTicker(VERIFY_INTERVAL, function()
+        if inCombat then return end
+        local id = queue[pos]
+        if not id then
+            verifyTicker:Cancel(); verifyTicker = nil
+            if confirmed > 0 then ns:InvalidateItems() end
+            if GearGuideDB.maintainer then
+                ns.Print(string.format("Raid items checked: %d confirmed by the client, %d unknown, %d not answered.",
+                    confirmed, unknown, #queue - confirmed - unknown))
+            end
+            return
+        end
+        local ok, _, _, _, eq = pcall(getInstant, id)
+        if not (ok and eq) then  -- this client doesn't have the item: it stays hidden
+            unknown = unknown + 1
+            pos = pos + 1
+        elseif store(id) and GearGuideHarvest.items[id] then
+            confirmed = confirmed + 1
+            pos = pos + 1
+            if confirmed % 25 == 0 then ns:InvalidateItems() end
+        else
+            tries[id] = (tries[id] or 0) + 1
+            if requestLoad then requestLoad(id) end
+            if tries[id] >= VERIFY_TRIES then
+                pos = pos + 1
+            else
+                table.remove(queue, pos); queue[#queue + 1] = id  -- ask again after the others
+            end
+        end
+    end)
+end
+
 function ns:InitHarvest()
+    C_Timer.After(20, function() ns:VerifyProvisional() end)
     local s = S()
     if s.running then
         s.running = false

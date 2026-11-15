@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.0 (2026-11-15)
+
+- Raid loot: 481 raid and world boss items that were missing from the database are now included, e.g. Perdition's Blade and Bonereaver's Edge (Ragnaros), with their drop chances. Only loot that drops exclusively in raids or from world bosses was added, listed only under those bosses and creatures.
+- These items appear once your game client confirms them: GearGuide asks the client in the background and uses its own item data (WoW: Forever's real stats). Items the client doesn't know never show up.
+- Removed a few wrong drop sources where a creature far below an item's level was listed as dropping it (e.g. a level 57 epic "dropped" by a level 16 creature).
+
 ## 0.13.0 (2026-11-15)
 
 - Creature tooltips: mouse over a creature to see which of your recommended and favorite items it drops, with the drop chance and the score gain over what you have equipped (favorites are marked with a star). Can be turned off in Settings.

@@ -163,8 +163,11 @@ function ns:AllItemIds()
         for id in pairs(layer) do
             if not seen[id] then
                 seen[id] = true
-                -- Judge by the record GetItem returns (newest layer wins).
-                if not ns.IsJunkItem(self:GetItem(id)) then list[#list + 1] = id end
+                -- Judge by the record GetItem returns (newest layer wins). Provisional raid items
+                -- (pv, from the build's cmangos import) only count once the client has returned its
+                -- own record for them (Harvest.lua VerifyProvisional).
+                local item = self:GetItem(id)
+                if not item.pv and not ns.IsJunkItem(item) then list[#list + 1] = id end
             end
         end
     end
@@ -301,6 +304,8 @@ end
 -- Lists (recommendations, browser, mini tracker) leave out items without a known source unless
 -- the player turned them on. Favorites always stay: the player picked them on purpose.
 function ns:ShowsItem(id)
+    local item = self:GetItem(id)
+    if item and item.pv then return false end  -- not confirmed by this client yet
     return GearGuideDB.showUnknown or self:HasSource(id) or (self.IsFavorite and self:IsFavorite(id)) or false
 end
 

@@ -668,6 +668,111 @@ def add_cmangos_drops(items: dict[int, dict], store: QuestieStore, zones: ZoneDa
     return n
 
 
+def raid_area(store: QuestieStore, zones: ZoneData, kind: str, eid: int, maps: dict) -> int | None:
+    """The raid's area ID if this creature/chest is in a raid; 0 for an outdoor world boss; None
+    otherwise. Where it spawns (cmangos spawn tables) decides; Questie's zone is the fallback for
+    creatures without a fixed spawn (summoned bosses)."""
+    from cmangos_items import BOSS_RANK, CONTINENTS, RAID_AREAS, RAID_MAPS, WORLD_BOSS_MIN_LEVEL
+    qkind = "Npc" if kind == "npc" else "Object"
+    if not store.name(qkind, eid):
+        return None
+    spawned = maps.get(kind, {}).get(eid) or set()
+    raids = {RAID_MAPS[m] for m in spawned if m in RAID_MAPS}
+    if raids:
+        return raids.pop() if len(raids) == 1 and spawned <= set(RAID_MAPS) else None
+    zone = store.field(qkind, eid, NPC_ZONE if kind == "npc" else OBJECT_ZONE)
+    if not spawned and zone in RAID_AREAS:
+        return zone
+    boss = (kind == "npc" and store.field("Npc", eid, NPC_RANK) == BOSS_RANK
+            and (store.field("Npc", eid, 5) or 0) >= WORLD_BOSS_MIN_LEVEL)
+    if boss and spawned and spawned <= CONTINENTS:
+        return 0  # world boss (Azuregos, Lord Kazzak)
+    if boss and not spawned and isinstance(zone, int) and zone > 0 and zone not in zones.dungeons:
+        return 0  # event-spawned world boss outdoors (the dragons of Nightmare)
+    return None
+
+
+def add_raid_items(items: dict[int, dict], store: QuestieStore, zones: ZoneData, chances: dict,
+                   dump: Path) -> int:
+    """Adds raid loot missing from the database (provisional records, see cmangos_items.py).
+
+    An item qualifies only if every creature and chest cmangos says drops it is in a raid (or is a
+    world boss): anything that also drops elsewhere is a world drop and is left alone. Its sources
+    are exactly those raid creatures/chests, best chance first. Returns how many items were added."""
+    from cmangos_items import MAX_SOURCES, MIN_CHANCE, MIN_QUALITY, item_shells, spawn_maps
+    from build_db import excluded
+    maps = spawn_maps(dump)
+    area = {}  # (kind, id) -> raid area / 0 / None, cached
+    droppers: dict[int, list[tuple[float, str, int]]] = {}
+    for kind in ("npc", "object"):
+        for eid, found in chances.get(kind, {}).items():
+            for iid, pct in found.items():
+                # missing, provisional from an earlier build, or known but without any source
+                rec = items.get(iid)
+                if rec is None or rec.get("pv") or not rec.get("src"):
+                    droppers.setdefault(iid, []).append((pct, kind, eid))
+
+    def in_raid(kind, eid):
+        if (kind, eid) not in area:
+            area[(kind, eid)] = raid_area(store, zones, kind, eid, maps)
+        return area[(kind, eid)] is not None
+
+    candidates = {iid for iid, ds in droppers.items()
+                  if all(in_raid(k, e) for _, k, e in ds) and max(p for p, _, _ in ds) >= MIN_CHANCE}
+    shells = item_shells(dump, candidates)
+    added = 0
+    for iid, rec in shells.items():
+        known = items.get(iid)
+        if known and not known.get("pv"):
+            rec = {k: v for k, v in known.items() if k != "src"}  # the client's record: keep it
+        if (rec.get("q") or 0) < MIN_QUALITY or excluded(rec):
+            continue
+        src = []
+        for pct, kind, eid in sorted(droppers[iid], reverse=True):
+            if pct < MIN_CHANCE or len(src) >= MAX_SOURCES:
+                break
+            if kind == "npc":
+                s = _npc_source(store, zones, "drop", eid)
+            else:
+                s = {"t": "drop", "n": store.name("Object", eid), "z": store.field("Object", eid, OBJECT_ZONE),
+                     "loc": location(zones, store.field("Object", eid, OBJECT_SPAWNS)), "k": "object"}
+            if s:
+                s["dc"] = pct
+                if not s.get("z") and area[(kind, eid)]:
+                    s["z"] = area[(kind, eid)]  # e.g. Sapphiron, whom Questie has no zone for
+                s = {k: v for k, v in s.items() if v is not None}
+                if all(o["n"] != s["n"] for o in src):
+                    src.append(s)
+        if src:
+            items[iid] = {**rec, "src": src}
+            added += 1
+    return added
+
+
+MAX_LEVEL_GAP = 15  # a creature this many levels below the item's required level can't drop it
+
+
+def drop_implausible(items: dict[int, dict], store: QuestieStore) -> int:
+    """Removes drop sources whose creature is far below the item's required level (e.g. a level 57
+    epic "dropped" by a level 16 creature), whatever added them. Returns how many were removed."""
+    level: dict[str, int] = {}
+    for nid in store.ids("Npc"):
+        name = store.name("Npc", nid)
+        if name:
+            level[name] = max(level.get(name, 0), store.field("Npc", nid, 5) or 0)
+    removed = 0
+    for rec in items.values():
+        need = rec.get("rl") or 0
+        src = rec.get("src")
+        if need <= MAX_LEVEL_GAP or not src:
+            continue
+        keep = [s for s in src if not (isinstance(s, dict) and s.get("t") == "drop" and s.get("k") != "object"
+                                       and 0 < level.get(s.get("n"), 0) < need - MAX_LEVEL_GAP)]
+        removed += len(src) - len(keep)
+        rec["src"] = keep
+    return removed
+
+
 def merge_sources(items: dict[int, dict], questie_path: Path, chances: dict | None = None) -> tuple[int, int]:
     """Adds Questie sources to GearGuide items in place. Returns (items with new sources, sources added).
     chances: optional drop chances (import_cmangos.drop_chances), also added to matching known sources."""
@@ -698,9 +803,15 @@ def merge_sources(items: dict[int, dict], questie_path: Path, chances: dict | No
         if chances:  # best drop chance first (stable: everything else keeps its order)
             have.sort(key=lambda s: -(s.get("dc") or 0) if isinstance(s, dict) else 0)
     if chances:
+        if chances.get("dump"):  # first: raid loot gets raid-only sources
+            raid = add_raid_items(items, store, zones, chances, chances["dump"])
+            print(f"Raid loot from cmangos (missing from the scan, or without a source): {raid} items")
         found = add_cmangos_drops(items, store, zones, chances)
         if found:
             print(f"Drop sources from cmangos for items Questie has none for: {found} items")
+    dropped = drop_implausible(items, store)
+    if dropped:
+        print(f"Removed {dropped} drop sources from creatures far below the item's level")
     inferred = infer_sources(items, store, zones)
     if inferred:
         print("Inferred sources for items without one: "

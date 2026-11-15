@@ -129,11 +129,14 @@ def main() -> int:
     p.add_argument("--cmangos", type=Path, default=CMANGOS_DUMP if CMANGOS_DUMP.exists() else None,
                    help="cmangos classic-db dump (.sql or .sql.gz) for vendor gold prices and drop chances "
                         "(default: GearGuideTools/.cache/ClassicDB.sql.gz when present)")
+    p.add_argument("--no-cmangos", action="store_true", help="don't use the cmangos dump (drop chances, raid loot, prices)")
     p.add_argument("--keep-poor", action="store_true", help="keep gray (poor quality) items")
     p.add_argument("--sources", action="store_true", help="release even if only new sources were learned")
     p.add_argument("--force", action="store_true", help="release even if the scan is unfinished or nothing changed")
     p.add_argument("--dry-run", action="store_true", help="show the comparison, change nothing")
     args = p.parse_args()
+    if args.no_cmangos:
+        args.cmangos = None
 
     saved = args.saved or find_saved_variables(args.wow)
     print(f"Reading scan from {saved}")
@@ -142,6 +145,7 @@ def main() -> int:
     if args.cmangos and questie:
         from import_cmangos import drop_chances
         chances = drop_chances(args.cmangos)
+        chances["dump"] = args.cmangos  # for raid loot the scan missed (cmangos_items.py)
         print(f"cmangos drop chances: {sum(len(v) for v in chances['npc'].values())} creature drops")
     items, meta, scan = collect(saved, args.corrections, questie=questie, keep_poor=args.keep_poor, chances=chances)
     old, old_meta = read_shipped(DATA)
@@ -155,6 +159,9 @@ def main() -> int:
         base = {iid: {k: v for k, v in rec.items() if k != "src"} for iid, rec in old.items()
                 if not excluded(rec, args.keep_poor)}
         for iid, rec in items.items():  # learned items/sources from the saved variables
+            if iid in base and base[iid].get("pv") and rec.get("st"):
+                # A provisional raid item the client has now returned: its real record replaces it.
+                base[iid] = {k: v for k, v in rec.items() if k != "src"}
             if iid in base:
                 if rec.get("src"):
                     base[iid]["src"] = list(rec["src"])
