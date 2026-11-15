@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.1 (2026-11-15)
+
+- World map fix: shaded areas and outlines were still hidden behind the map's own layers. They are now placed above everything the map draws, with GearGuide's pins on top.
+
 ## 0.15.0 (2026-11-15)
 
 - World map fix: area outlines (and roaming routes) were drawn underneath the map, so only pins showed. They are now drawn on top of the map, below the pins.

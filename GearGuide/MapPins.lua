@@ -27,6 +27,8 @@ local MAX_TRIANGLES = 240
 local pins, active = {}, nil   -- active = { map = uiMapID, points = {...}, routes = {...}, title, kind, sub }
 local lines = {}
 local triangles = {}
+local overlay            -- frame above the map's own frames: routes, area outlines and fills
+local ownFrames = {}     -- our pins and overlay: left out when looking for the map's top frame level
 local drawn = {}  -- what the last refresh drew (for /gg dev)
 local watcher
 
@@ -54,6 +56,7 @@ local function getPin(i, parent)
     local pin = pins[i]
     if not pin then
         pin = CreateFrame("Button", nil, parent)
+        ownFrames[pin] = true
         pin:SetSize(PIN_SIZE, PIN_SIZE)
         pin.icon = pin:CreateTexture(nil, "OVERLAY")
         pin.icon:SetAllPoints()
@@ -88,15 +91,29 @@ end
 
 -- Routes, area outlines and area fills are drawn on one overlay frame above the map tiles (and
 -- below the pins). Drawn on the canvas itself they end up underneath the map's tile frames.
-local overlay
+
+-- The map puts its own frames (map art, explored areas, other pins) above the canvas; our layer
+-- must be above all of them or they cover it. Measured, since their levels vary.
+local function mapTopLevel(c)
+    local top = c:GetFrameLevel() or 1
+    for _, child in ipairs({ c:GetChildren() }) do
+        if not ownFrames[child] and child.GetFrameLevel and child.IsShown and child:IsShown() then
+            local lvl = child:GetFrameLevel() or 0
+            if lvl > top then top = lvl end
+        end
+    end
+    return top
+end
+
 local function getOverlay(c)
     if not overlay then
         overlay = CreateFrame("Frame", nil, c)
+        ownFrames[overlay] = true
     end
     if overlay:GetParent() ~= c then overlay:SetParent(c) end
     overlay:ClearAllPoints()
     overlay:SetAllPoints(c)
-    overlay:SetFrameLevel((c:GetFrameLevel() or 1) + 15)
+    overlay:SetFrameLevel(math.min(9990, mapTopLevel(c) + 1))
     overlay:Show()
     return overlay
 end
@@ -213,7 +230,7 @@ local function refreshPins()
         pin:ClearAllPoints()
         pin:SetPoint("CENTER", c, "TOPLEFT", p.x * w / scale, -p.y * h / scale)
         pin.icon:SetTexture(icon)
-        pin:SetFrameLevel((c:GetFrameLevel() or 1) + 20)
+        pin:SetFrameLevel(math.min(9995, (overlay and overlay:GetFrameLevel() or mapTopLevel(c)) + 2))
         pin:Show()
     end
     for i = math.min(#shown, MAX_PINS) + 1, #pins do pins[i]:Hide() end
@@ -324,8 +341,13 @@ function ns:ShowOnMap(loc)
     wipe(drawn)
     refreshPins()
     if GearGuideDB and GearGuideDB.maintainer then
-        ns.Print(string.format("Map: %d area(s), %d pin(s); drew %s filled triangles, %s outline/route lines%s%s",
+        local c = canvas()
+        ns.Print(string.format("Map: %d area(s), %d pin(s); drew %s filled triangles, %s outline/route lines; "
+            .. "levels: canvas %s, map top %s, overlay %s, overlay size %dx%d%s%s",
             #(loc.areas or {}), #loc.pins, tostring(drawn.triangles or 0), tostring(drawn.lines or 0),
+            tostring(c and c:GetFrameLevel()), tostring(c and mapTopLevel(c)),
+            tostring(overlay and overlay:GetFrameLevel()),
+            overlay and overlay:GetWidth() or 0, overlay and overlay:GetHeight() or 0,
             drawn.fill and (", fill: " .. drawn.fill) or "",
             drawn.failed and drawn.failed > 0 and (", " .. drawn.failed .. " failed: " .. drawn.fillError) or ""))
     end
