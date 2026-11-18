@@ -154,11 +154,12 @@ end
 
 -- The game's own item tooltips (bags, loot, links): a random variant names its base item.
 function ns:VariantTooltipLines(link)
-    local suffix = ns.LinkSuffix(link)
-    local id = suffix and ns.LinkToId(link)
+    local id = ns.LinkBonus(link) and ns.LinkToId(link)
     local item = id and self:GetItem(id)
     if not (item and item.n) then return nil end
     local variants = self:GetVariants(id)
+    if #variants == 0 then return nil end  -- a bonus id that isn't a random bonus
+    local suffix = self:LinkVariant(link)  -- nil: a bonus the shipped data doesn't list
     local chance
     for _, v in ipairs(variants) do
         if v.p == suffix then chance = v.c end
@@ -183,17 +184,40 @@ local function addVariantLines(tip, link)
 end
 ns.AddVariantTooltipLines = addVariantLines  -- (tests)
 
+-- Upgrade or downgrade over what you wear, on every item tooltip (bags, quest rewards in any quest
+-- window, links...). Same number and setting as the icon badges.
+local function addGainLine(tip, link)
+    if not (ns.Badges and (not GearGuideDB or GearGuideDB.iconBadges ~= false)) then return false end
+    link = ns.Plain(link)
+    if not link then
+        local ok, _, l = pcall(tip.GetItem, tip)
+        link = ok and ns.Plain(l) or nil
+    end
+    local gain = link and ns.Badges.GainFor(link)
+    if not gain then return false end
+    local text = ns.Badges.formatGain(gain)
+    if gain > 0 then
+        tip:AddLine("GearGuide: " .. text .. " over what you wear", 0.33, 0.85, 0.42)
+    else
+        tip:AddLine("GearGuide: " .. text .. " compared to what you wear", 0.92, 0.36, 0.32)
+    end
+    return true
+end
+ns.AddGainTooltipLine = addGainLine  -- (tests)
+
 if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType
     and Enum.TooltipDataType.Item then
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tip, data)
+        pcall(addGainLine, tip, data and data.hyperlink)
         pcall(addVariantLines, tip, data and data.hyperlink)
     end)
 else
     for _, t in ipairs({ GameTooltip, ItemRefTooltip }) do
         if t and t.HookScript then
             t:HookScript("OnTooltipSetItem", function(tip)
-                local ok, added = pcall(addVariantLines, tip)
-                if ok and added then tip:Show() end
+                local ok1, gainAdded = pcall(addGainLine, tip)
+                local ok2, added = pcall(addVariantLines, tip)
+                if (ok1 and gainAdded) or (ok2 and added) then tip:Show() end
             end)
         end
     end

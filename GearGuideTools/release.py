@@ -193,6 +193,9 @@ def main() -> int:
             meta["questie"] = questie_version(questie)
             meta["credits"] = "Item sources include data from the Questie project's database (GPL-3.0)"
         apply_corrections(base, args.corrections)
+        if questie:
+            from import_questie import resolve_npc_sources
+            resolve_npc_sources(base, questie)
         # Items hidden earlier are already gone from the shipped base, so keep the shipped list too:
         # it is what hides them again when a player's own scan still has them.
         hidden = sorted(set(hide_by_source(base, args.corrections)) | set(old_meta.get("hidden") or []))

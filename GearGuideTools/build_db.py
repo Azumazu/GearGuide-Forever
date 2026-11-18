@@ -309,7 +309,9 @@ def collect(saved: Path, corrections: Path = CORRECTIONS, include_learned: bool 
                 items[int(iid)] = {k: rec[k] for k in KEEP_FIELDS if rec.get(k) not in (None, {}, [])}
         for iid, srcs in as_dict(learned.get("sources")).items():
             if int(iid) in items and isinstance(srcs, list) and srcs:
-                items[int(iid)]["src"] = [s for s in srcs if real_source(s)]
+                # seen: looted/visited in game, so a confirmed source for the build's sanity rules
+                # (import_questie drop_implausible / drop_other_version). Not written to Data.lua.
+                items[int(iid)]["src"] = [{**s, "seen": True} for s in srcs if real_source(s)]
         # Vendor prices seen in game -> item["vp"] = {vendor: {g: copper, c: [{n, q, i}, ...]}}
         priced = 0
         for iid, by_vendor in as_dict(learned.get("prices")).items():
@@ -328,7 +330,7 @@ def collect(saved: Path, corrections: Path = CORRECTIONS, include_learned: bool 
             seen = {(s.get("t"), s.get("n")) for s in have}
             for s in srcs:
                 if real_source(s) and (s.get("c") or 0) >= MIN_SHARED_REPORTS and (s.get("t"), s.get("n")) not in seen:
-                    have.append({k: s[k] for k in ("t", "n", "z") if s.get(k) is not None})
+                    have.append({**{k: s[k] for k in ("t", "n", "z") if s.get(k) is not None}, "seen": True})
                     trusted += 1
         if trusted:
             print(f"Shared sources from players (reported 2+ times): {trusted}")
@@ -342,6 +344,9 @@ def collect(saved: Path, corrections: Path = CORRECTIONS, include_learned: bool 
     fixed = apply_corrections(items, corrections)
     if fixed:
         print(f"Applied {fixed} corrections from {corrections.name}")
+    if questie:
+        from import_questie import resolve_npc_sources
+        resolve_npc_sources(items, questie)
     hidden = hide_by_source(items, corrections)
     if hidden:
         print(f"Hidden by source (_hide_sources): {len(hidden)} items")

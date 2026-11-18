@@ -8,3 +8,6 @@ __pycache__/
 *.bak
 # never commit credentials
 .env
+# local CurseForge download stats and the screenshot bundle (rebuilt from curseforge/screenshots)
+curseforge/stats-state.json
+curseforge/*.zip

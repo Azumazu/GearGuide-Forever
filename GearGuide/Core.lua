@@ -109,6 +109,43 @@ local STAT_MAP = {
 }
 local getItemStats = (C_Item and C_Item.GetItemStats) or GetItemStats
 
+-- A random bonus ("of the Eagle": +9 Stamina, +9 Intellect) is an enchantment on the item, and the
+-- client's stat function leaves it out. Its tooltip lists it ("+9 Stamina"), so for items with a
+-- bonus the "+N Stat" lines are read there. Stat name (lower case, the client's language) -> key.
+local tipNames
+local function tooltipStatNames()
+    if tipNames then return tipNames end
+    tipNames = {}
+    for global, key in pairs(STAT_MAP) do
+        local name = _G[global]
+        if type(name) == "string" and key ~= "ARMOR" and key ~= "DPS" then tipNames[name:lower()] = key end
+    end
+    for i = 1, 6 do  -- "of Fire Resistance" (R2...): the Build Simulator's resistance keys
+        local name = _G["RESISTANCE" .. i .. "_NAME"]
+        if type(name) == "string" then tipNames[name:lower()] = "R" .. i end
+    end
+    return tipNames
+end
+
+local tipStatCache = {}
+-- { key = total } of the "+N Stat" lines in the item's tooltip; nil when the client can't show it yet.
+function ns.TooltipStats(link)
+    if tipStatCache[link] then return tipStatCache[link] end
+    if not (C_TooltipInfo and C_TooltipInfo.GetHyperlink) then return nil end
+    local ok, data = pcall(C_TooltipInfo.GetHyperlink, link)
+    if not (ok and type(data) == "table" and type(data.lines) == "table" and data.lines[2]) then return nil end
+    local names, out = tooltipStatNames(), {}
+    for _, line in ipairs(data.lines) do
+        local text = ns.Plain(line.leftText)
+        local n, stat
+        if text then n, stat = text:match("^%+(%d+) (.-)%.?$") end  -- (`text and ...` keeps only n)
+        local key = stat and names[stat:lower()]
+        if key then out[key] = (out[key] or 0) + tonumber(n) end
+    end
+    tipStatCache[link] = out
+    return out
+end
+
 function ns.ReadStats(link)
     local out = {}
     local raw = getItemStats and getItemStats(link)
@@ -116,6 +153,13 @@ function ns.ReadStats(link)
         for k, v in pairs(raw) do
             local key = STAT_MAP[k]
             if key then out[key] = (out[key] or 0) + v end
+        end
+    end
+    if ns.LinkBonus(link) then
+        -- The tooltip's lines are the base stats plus the bonus: the larger of the two counts, so a
+        -- client that does include the bonus isn't counted twice.
+        for key, v in pairs(ns.TooltipStats(link) or {}) do
+            if not key:match("^R%d$") and v > (out[key] or 0) then out[key] = v end
         end
     end
     return out
@@ -137,6 +181,26 @@ function ns.LinkSuffix(link)
     if type(link) ~= "string" then return nil end
     local s = tonumber(link:match("item:%-?%d+:[^:|]*:[^:|]*:[^:|]*:[^:|]*:[^:|]*:(%-?%d+)"))
     if s and s ~= 0 then return s end
+end
+
+-- Whether the link carries a random bonus, in either form: the classic suffix field, or (how the
+-- WoW: Forever client links them) bonus ids after the 13th field:
+--   item:10777::::::::42:1488::1:1:13171:1:28:5245  -> 1 bonus id, 13171
+-- Returns a key naming the bonus ("s604", "b13171") or nil. Stats then come from the tooltip.
+function ns.LinkBonus(link)
+    local s = ns.LinkSuffix(link)
+    if s then return "s" .. s end
+    local body = type(link) == "string" and link:match("item:([%-%d:]*)")
+    if not body then return nil end
+    local f = {}
+    for v in (body .. ":"):gmatch("([^:]*):") do f[#f + 1] = v end
+    local n = tonumber(f[13])
+    if not n or n < 1 then return nil end
+    local ids = {}
+    for i = 14, 13 + n do
+        if tonumber(f[i]) then ids[#ids + 1] = f[i] end
+    end
+    if #ids > 0 then return "b" .. table.concat(ids, ",") end
 end
 
 function ns.VariantLink(id, suffix)
@@ -199,6 +263,33 @@ function ns:VariantInfo(id, suffix)
     local info = { name = name, suffix = sfx ~= "" and sfx or nil, st = st, bonus = bonus, link = link }
     variantCache[key] = info
     return info
+end
+
+-- The variant's suffix id (what the shipped groups and VariantLink use) for a link of either form.
+-- A WoW: Forever link has a bonus id instead, so its name ("Sentinel Girdle of the Bandit") is
+-- matched against the item's variants. nil: no bonus, an unknown one, or the client still loading.
+local variantByBonus = {}
+function ns:LinkVariant(link)
+    local s = ns.LinkSuffix(link)
+    if s then return s end
+    local bonus = ns.LinkBonus(link)
+    local id = bonus and ns.LinkToId(link)
+    if not id then return nil end
+    local key = id .. ":" .. bonus
+    if variantByBonus[key] ~= nil then return variantByBonus[key] or nil end
+    local name = (type(link) == "string" and link:match("|h%[(.-)%]|h")) or ns.GetItemInfo(link)
+    if not name then return nil end
+    local pending = false
+    for _, v in ipairs(self:GetVariants(id)) do
+        local info = self:VariantInfo(id, v.p)
+        if info and info.name == name then
+            variantByBonus[key] = v.p
+            return v.p
+        end
+        pending = pending or info == nil
+    end
+    if not pending then variantByBonus[key] = false end  -- every variant checked: not one of them
+    return nil
 end
 
 ---------------------------------------------------------------------------
@@ -445,6 +536,128 @@ function ns:ShowsItem(id)
     return GearGuideDB.showUnknown or self:HasSource(id) or (self.IsFavorite and self:IsFavorite(id)) or false
 end
 
+---------------------------------------------------------------------------
+-- Dungeon and raid loot (Gear Browser "Instance" filter). An instance is any area that shipped
+-- creature locations mark as "inside, entrance at e" (spawns with no outdoor coordinates); its
+-- loot is what creatures and chests there drop. World drops that trash happens to carry (the
+-- client lists them at well under 1%) are left out, so the list is the instance's own loot.
+---------------------------------------------------------------------------
+local RAID_AREAS = { [2717] = true, [2677] = true, [2159] = true, [1977] = true, [3429] = true,
+    [3428] = true, [3456] = true }  -- MC, BWL, Onyxia, ZG, AQ20, AQ40, Naxxramas
+local INSTANCE_MIN_CHANCE = 0.5     -- % ; below this a drop is a world drop, not instance loot
+
+function ns:InstanceIndex()
+    if self.instanceIndex then return self.instanceIndex end
+    local data = GearGuide_Data
+    local areas, byName = {}, {}
+    for _, loc in pairs(data.locs or {}) do
+        for _, entry in ipairs(type(loc) == "table" and loc or {}) do
+            if entry.e and not areas[entry.e] then
+                local name = ns.ZoneName(entry.e)
+                if name and name ~= "" then
+                    areas[entry.e] = { area = entry.e, name = name, raid = RAID_AREAS[entry.e] or false, items = {} }
+                    byName[name] = areas[entry.e]
+                end
+            end
+        end
+    end
+    local function instanceOf(z)
+        if type(z) == "number" then return areas[z] end
+        return z and byName[z]
+    end
+    -- Shipped sources: judged per source by its own drop chance (unknown counts as loot).
+    local bestChance = {}
+    for id, dbItem in pairs(data.items or {}) do
+        if type(dbItem) == "table" and dbItem.src then
+            local chances = type(dbItem.dc) == "table" and dbItem.dc or nil
+            for i, s in ipairs(dbItem.src) do
+                if type(s) == "number" then s = data.sources and data.sources[s] end
+                local inst = type(s) == "table" and s.t == "drop" and instanceOf(s.z)
+                local dc = chances and chances[i]
+                if dc and dc > 0 then bestChance[id] = math.max(bestChance[id] or 0, dc) end
+                if inst and (not dc or dc == 0 or dc >= INSTANCE_MIN_CHANCE) then inst.items[id] = true end
+            end
+        end
+    end
+    -- Drops seen in game (own and shared) carry zone names and no chance: they count unless the
+    -- shipped data knows the item only as a rare world drop.
+    local function addSeen(store)
+        for id, list in pairs(store or {}) do
+            local best = bestChance[id]
+            if not best or best >= INSTANCE_MIN_CHANCE then
+                for _, s in ipairs(type(list) == "table" and list or {}) do
+                    local inst = s.t == "drop" and instanceOf(s.z)
+                    if inst then inst.items[id] = true end
+                end
+            end
+        end
+    end
+    addSeen(GearGuideLearned.sources)
+    addSeen(GearGuideLearned.shared)
+    -- Sorted by the level of their loot (median wearable level), dungeons before raids, and labeled
+    -- with the middle of that range (most of the loot, without the odd outlier).
+    local list = {}
+    for _, inst in pairs(areas) do
+        local levels = {}
+        for id in pairs(inst.items) do
+            local item = self:GetItem(id)
+            if item then levels[#levels + 1] = ns.EffectiveLevel(item) end
+        end
+        if #levels > 0 then
+            table.sort(levels)
+            local function at(p) return levels[math.max(1, math.min(#levels, math.floor(#levels * p + 0.5)))] end
+            inst.minL, inst.midL, inst.maxL = at(0.2), at(0.5), at(0.8)
+            list[#list + 1] = inst
+        end
+    end
+    table.sort(list, function(a, b)
+        if a.raid ~= b.raid then return not a.raid end
+        if a.midL ~= b.midL then return a.midL < b.midL end
+        return a.name < b.name
+    end)
+    self.instanceIndex = { list = list, byArea = areas }
+    return self.instanceIndex
+end
+
+-- Raid gear: an item named like loot from a raid (the raid's own copy, and look-alikes such as
+-- WoW Forever's level-30 copies of Molten Core rings). Not recommended before max level: raids
+-- are endgame, whatever a copy's required level says.
+local raidNames
+function ns:IsRaidGear(item)
+    if not item or not item.n then return false end
+    if not raidNames then
+        raidNames = {}
+        local data = GearGuide_Data
+        for _, dbItem in pairs(data.items or {}) do
+            -- Only raid loot: every creature drop is in a raid (world-drop epics that raid trash
+            -- also carries, like Imbued Plate Pauldrons, stay normal gear).
+            if type(dbItem) == "table" and dbItem.n and dbItem.src then
+                local inRaid, elsewhere = false, false
+                for _, s in ipairs(dbItem.src) do
+                    if type(s) == "number" then s = data.sources and data.sources[s] end
+                    if type(s) == "table" and s.t == "drop" then
+                        if RAID_AREAS[s.z] then inRaid = true else elsewhere = true end
+                    end
+                end
+                if inRaid and not elsewhere then raidNames[dbItem.n] = true end
+            end
+        end
+    end
+    return raidNames[item.n] == true
+end
+
+-- Raid gear waits for max level (favorites still show: the player picked those).
+function ns:RaidGearTooEarly(item, level)
+    local max = (GetMaxPlayerLevel and GetMaxPlayerLevel()) or 60
+    return (level or 1) < max and self:IsRaidGear(item)
+end
+
+-- Item ids that drop in an instance (area ID), as a set; nil for an unknown area.
+function ns:InstanceItems(area)
+    local inst = area and self:InstanceIndex().byArea[area]
+    return inst and inst.items or nil
+end
+
 function ns:SetShowUnknown(on)
     GearGuideDB.showUnknown = on and true or false
     ns.Print(on and "Showing items whose source is not discovered yet." or "Hiding items whose source is not discovered yet (favorites still show).")
@@ -533,10 +746,17 @@ function ns:ShowSourceOnMap(s)
     self:ShowOnMap({ map = entry.m, points = points, routes = routes, areas = areas, title = s.n, sub = sub, kind = kind })
 end
 
-function ns:SourceSummary(id)
+-- preferZone (a zone name): lead with a source there, e.g. the boss when browsing one dungeon.
+function ns:SourceSummary(id, preferZone)
     local list = self:GetSources(id)
     if #list == 0 then return "|cff888888Not discovered yet|r" end
-    local text = ns.FormatSource(list[1])
+    local first = list[1]
+    if preferZone then
+        for _, s in ipairs(list) do
+            if s.t == "drop" and ns.ZoneName(s.z) == preferZone then first = s break end
+        end
+    end
+    local text = ns.FormatSource(first)
     if #list > 1 then text = text .. string.format(" |cff888888+%d more|r", #list - 1) end
     return text
 end
@@ -551,12 +771,47 @@ end
 function ns:SetFavorite(id, on)
     if not id then return end
     GearGuideCharDB.favorites[id] = on and (GearGuideCharDB.favorites[id] or time()) or nil
+    if on and GearGuideCharDB.ignored then GearGuideCharDB.ignored[id] = nil end  -- wanted again
     self:RequestRefresh()
 end
 
 function ns:ToggleFavorite(id)
     self:SetFavorite(id, not self:IsFavorite(id))
     return self:IsFavorite(id)
+end
+
+---------------------------------------------------------------------------
+-- Ignored items (per character): never recommended (Recommended tab, mini tracker, zone picks,
+-- Gear Acquired pop-up, creature tooltips, the Build Simulator's recommended build). They still
+-- show in the Gear Browser and the simulator's item lists, marked, so they can be un-ignored.
+---------------------------------------------------------------------------
+function ns:IsIgnored(id)
+    return GearGuideCharDB ~= nil and GearGuideCharDB.ignored ~= nil and id ~= nil
+        and GearGuideCharDB.ignored[id] ~= nil
+end
+
+function ns:SetIgnored(id, on)
+    if not id or not GearGuideCharDB then return end
+    GearGuideCharDB.ignored = GearGuideCharDB.ignored or {}
+    GearGuideCharDB.ignored[id] = on and (GearGuideCharDB.ignored[id] or time()) or nil
+    if on and GearGuideCharDB.favorites then GearGuideCharDB.favorites[id] = nil end  -- not wanted
+    self:RequestRefresh()
+end
+
+function ns:ToggleIgnored(id)
+    self:SetIgnored(id, not self:IsIgnored(id))
+    return self:IsIgnored(id)
+end
+
+function ns:IgnoredCount()
+    local n = 0
+    for _ in pairs(GearGuideCharDB and GearGuideCharDB.ignored or {}) do n = n + 1 end
+    return n
+end
+
+function ns:ClearIgnored()
+    if GearGuideCharDB then GearGuideCharDB.ignored = {} end
+    self:RequestRefresh()
 end
 
 -- Favorite item IDs, oldest first (the order the player picked them).
@@ -766,26 +1021,72 @@ function ns.EffectiveLevel(item)
     return math.max(1, (item.il or 1) - 5)
 end
 
+---------------------------------------------------------------------------
+-- Combat ratings. WoW: Forever items carry hit, crit, dodge... as ratings (14 crit rating is 1% crit),
+-- while stat weights and caps are per 1%. The client converts at the player's own level; otherwise
+-- the table below. Forever doesn't scale the conversion with level (100 hit rating is 10% at level
+-- 29 too): lower-level items simply carry smaller ratings. Defense stays in skill points (items
+-- list it that way).
+---------------------------------------------------------------------------
+local RATING_60 = { HIT = 10, SHIT = 8, CRIT = 14, SCRIT = 14, DODGE = 12, PARRY = 15, BLOCK = 5,
+    HASTE = 10, EXPERTISE = 10 }  -- rating per 1% (expertise: per 1% less dodge)
+local CR_INDEX = { HIT = { "CR_HIT_MELEE", 6 }, SHIT = { "CR_HIT_SPELL", 8 }, CRIT = { "CR_CRIT_MELEE", 9 },
+    SCRIT = { "CR_CRIT_SPELL", 11 }, DODGE = { "CR_DODGE", 3 }, PARRY = { "CR_PARRY", 4 },
+    BLOCK = { "CR_BLOCK", 5 }, HASTE = { "CR_HASTE_MELEE", 18 } }
+local pctCache = {}
+
+-- Percent per rating point of `stat` at `level` (spell: hit as spell hit), or nil for stats that
+-- aren't ratings.
+function ns.RatingPct(stat, level, spell)
+    if not RATING_60[stat] then return nil end
+    if spell and stat == "HIT" then stat = "SHIT" end
+    level = math.max(1, math.min(60, math.floor(tonumber(level) or 60)))
+    local key = stat .. level
+    local v = pctCache[key]
+    if v then return v end
+    local cr = CR_INDEX[stat]
+    local convert = GetCombatRatingBonusForCombatRatingValue
+    if cr and type(convert) == "function" and level == (UnitLevel("player") or 0) then
+        local ok, pct = pcall(convert, _G[cr[1]] or cr[2], 100)
+        pct = ok and tonumber(pct)
+        if pct and pct > 0 and pct < 1000 then v = pct / 100 end
+    end
+    if not v then v = 1 / RATING_60[stat] end
+    pctCache[key] = v
+    return v
+end
+
 -- Wraps the user-defined ScoreItem so a bug there can't break the whole UI.
 local RANGED_LOCS = { INVTYPE_RANGED = true, INVTYPE_RANGEDRIGHT = true, INVTYPE_THROWN = true }
-local rangedWeights = setmetatable({}, { __mode = "k" })  -- weights table -> copy with DPS = RDPS
+local derivedWeights = setmetatable({}, { __mode = "k" })  -- weights table -> { key -> copy }
+local SPELL_ROLES = { CASTER = true, HEALER = true }
 
--- Ranged weapons use the RDPS weight for their DPS when the spec defines one (hunters' bows vs.
--- melee stat sticks), so ScoreItem can keep reading weights.DPS.
-local function weightsFor(item, weights)
-    if not (weights.RDPS and RANGED_LOCS[item.eq]) then return weights end
-    local w = rangedWeights[weights]
+-- What ScoreItem multiplies item stats by: weights per rating point instead of per 1% (stats
+-- the item lists as ratings), and for ranged weapons the RDPS weight as DPS when the spec defines
+-- one (hunters' bows vs. melee stat sticks), so ScoreItem can keep reading weights.DPS.
+local function weightsFor(item, weights, ctx)
+    local ranged = weights.RDPS ~= nil and RANGED_LOCS[item.eq] == true
+    local spell = SPELL_ROLES[ctx.role] == true
+    local level = ctx.level or 60
+    local key = level .. (spell and "s" or "m") .. (ranged and "r" or "")
+    local byKey = derivedWeights[weights]
+    if not byKey then byKey = {}; derivedWeights[weights] = byKey end
+    local w = byKey[key]
     if not w then
         w = {}
-        for k, v in pairs(weights) do w[k] = v end
-        w.DPS = weights.RDPS
-        rangedWeights[weights] = w
+        for k, v in pairs(weights) do
+            local pct = ns.RatingPct(k, level, spell)
+            w[k] = pct and v * pct or v
+        end
+        if ranged then w.DPS = weights.RDPS end
+        byKey[key] = w
     end
     return w
 end
+ns.ScoringWeights = weightsFor
 
 function ns:Score(item, weights, ctx)
-    weights = weightsFor(item, weights)
+    weights = weightsFor(item, weights, ctx)
     ctx.armorMax = self:ArmorMax(ctx.class, math.max(ctx.level, item.rl or 0))
     local ok, result = pcall(ns.ScoreItem, item, weights, ctx)
     if not ok then
@@ -829,7 +1130,9 @@ end
 function ns:RequestRefresh()
     if self.refreshPending then return end
     self.refreshPending = true
+    self.instanceIndex = nil  -- new sources may add instance loot
     if self.InvalidateCreatureTips then self:InvalidateCreatureTips() end  -- upgrades may have changed
+    if self.InvalidateBadges then self:InvalidateBadges() end
     C_Timer.After(0.3, function()
         ns.refreshPending = false
         if ns.RefreshUI then ns:RefreshUI() end
@@ -850,8 +1153,10 @@ for _, e in ipairs({ "CHARACTER_POINTS_CHANGED", "PLAYER_TALENT_UPDATE", "ACTIVE
 end
 events:SetScript("OnEvent", function(_, event, arg1)
     if event == "ADDON_LOADED" and arg1 == addonName then
+        local updating = GearGuideDB ~= nil  -- settings from an earlier GearGuide: an update, not a fresh install
         GearGuideDB = GearGuideDB or {}
         applyDefaults(GearGuideDB, defaults)
+        if ns.NoteVersion then ns:NoteVersion(updating) end  -- WhatsNew.lua: "NEW" badges after updates
         -- 0.15.2: the map shades whole areas now, so the game's waypoint pin is off by default
         -- (it was on before). Once; the Settings checkbox turns it back on.
         if not GearGuideDB.waypointDefaultOff then
@@ -982,6 +1287,8 @@ SlashCmdList.GEARGUIDE = function(msg)
         GearGuideDB.notifiedBuild = nil
         ns.Print("Maintainer mode " .. (GearGuideDB.maintainer and "on: you'll be reminded to rescan after patches."
             or "off."))
+    elseif cmd == "inspect" then
+        ns:InspectTarget()  -- Party.lua: the target's gear as a build in the Build Simulator
     elseif cmd == "unmark" then
         ns:ResetAcquired()
         ns.Print("Cleared acquired marks for this character.")
@@ -1035,7 +1342,7 @@ SlashCmdList.GEARGUIDE = function(msg)
         ns:RequestRefresh()
         ns.Print("Forgot all items, sources and variants learned in game or shared by other players.")
     else
-        ns.Print("Commands: /gg (toggle window), /gg browse, /gg rec, /gg settings, /gg mini [count|auto|hover|opacity 0-100|scale 60-160], /gg minimap, "
+        ns.Print("Commands: /gg (toggle window), /gg browse, /gg rec, /gg settings, /gg inspect (target's gear into the Build Simulator), /gg mini [count|auto|hover|opacity 0-100|scale 60-160], /gg minimap, "
             .. "/gg spec [name], /gg range <below> <above>, /gg sharing [on|off], /gg unknown [on|off], /gg ej, /gg scan [pause|status|reset|full|extend], /gg status, /gg unmark, /gg forget")
     end
 end

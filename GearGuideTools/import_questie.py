@@ -509,6 +509,27 @@ def _npc_source(store, zones, kind, nid):
             "f": npc_faction(store, nid) if kind == "vendor" else None}
 
 
+def resolve_npc_sources(items: dict[int, dict], questie_path: Path) -> int:
+    """Hand-written sources (corrections.json) that name their creature by Questie ID ("npc": 263380)
+    get its name, zone and map location (with its patrol route for rares) from Questie, so they show
+    on the map like imported ones. Fields written in the correction win, e.g. "k": "rare" for a rare
+    Questie lists as a plain elite. Returns how many sources were resolved."""
+    store = QuestieStore(find_toc(questie_path))
+    zones = ZoneData(store.dir)
+    n = 0
+    for rec in items.values():
+        for i, s in enumerate(rec.get("src") or []):
+            if not (isinstance(s, dict) and s.get("npc")):
+                continue
+            nid = s.pop("npc")
+            found = _npc_source(store, zones, s.get("t") or "drop", nid) or {}
+            if found.get("loc") and s.get("k") == "rare" and found.get("k") != "rare":
+                found["loc"] = add_routes(found["loc"], routes(zones, store.field("Npc", nid, NPC_WAYPOINTS)))
+            rec["src"][i] = {k: v for k, v in {**found, **s}.items() if v is not None}
+            n += 1
+    return n
+
+
 def _quest_giver_location(store, zones, qid):
     started = store.field("Quest", qid, QUEST_STARTED_BY)
     if isinstance(started, list):
@@ -788,25 +809,89 @@ MAX_LEVEL_GAP = 15  # a creature this many levels below the item's required leve
 WORLD_DROP_MAX_CHANCE = 1.0  # % : loot tables with no chance this high are world drops (incomplete lists)
 
 
-def drop_implausible(items: dict[int, dict], store: QuestieStore) -> int:
-    """Removes drop sources whose creature is far below the item's required level (e.g. a level 57
-    epic "dropped" by a level 16 creature), whatever added them. Returns how many were removed."""
+def effective_level(rec: dict) -> int:
+    """The level an item is meant for (Core.lua ns.EffectiveLevel): its required level, or item level - 5
+    when it says "Requires level 1" (no requirement)."""
+    rl = rec.get("rl") or 0
+    return rl if rl > 1 else max(1, (rec.get("il") or 1) - 5)
+
+
+def _confirmed(s) -> bool:
+    """Backed by more than a database listing: players looted it in game (build_db marks those
+    "seen": your own finds, and shared ones reported by 2+ players) or a loot table gives a chance."""
+    return isinstance(s, dict) and bool(s.get("seen") or s.get("dc"))
+
+
+def _unconfirmed_drop(s) -> bool:
+    """A creature drop only a database lists: no drop chance, never seen in game by players."""
+    return isinstance(s, dict) and s.get("t") == "drop" and s.get("k") != "object" and not _confirmed(s)
+
+
+def drop_implausible(items: dict[int, dict], store: QuestieStore) -> tuple[int, list[int]]:
+    """Removes drop sources whose creature is far below the item's level (e.g. a level 57 epic
+    "dropped" by a level 16 creature), whatever added them. When most of an item's drops are like
+    that, its whole unconfirmed drop list is from another version of the game (e.g. Questie listing
+    level-30 copies of Molten Core loot on starting-zone boars) and none of it is kept; drops with a
+    known chance stay. Returns (sources removed, items whose unconfirmed drops were all removed)."""
     level: dict[str, int] = {}
     for nid in store.ids("Npc"):
         name = store.name("Npc", nid)
         if name:
             level[name] = max(level.get(name, 0), store.field("Npc", nid, 5) or 0)
-    removed = 0
-    for rec in items.values():
-        need = rec.get("rl") or 0
+    removed, wiped = 0, []
+    REMOVED_LOG.clear()
+    for iid, rec in items.items():
+        need = effective_level(rec)
         src = rec.get("src")
         if need <= MAX_LEVEL_GAP or not src:
             continue
-        keep = [s for s in src if not (isinstance(s, dict) and s.get("t") == "drop" and s.get("k") != "object"
-                                       and 0 < level.get(s.get("n"), 0) < need - MAX_LEVEL_GAP)]
+        creatures = [s for s in src if isinstance(s, dict) and s.get("t") == "drop" and s.get("k") != "object"]
+        # A real loot-table entry (1%+ in cmangos) or a drop players saw in game is confirmed,
+        # whatever the creature's level.
+        low = [s for s in creatures if 0 < level.get(s.get("n"), 0) < need - MAX_LEVEL_GAP
+               and (s.get("dc") or 0) < WORLD_DROP_MAX_CHANCE and not s.get("seen")]
+        if not low:
+            continue
+        # Most of its creatures (those of unknown level count as fitting) far below the item: the list.
+        if len(low) * 2 > len(creatures):
+            keep = [s for s in src if not _unconfirmed_drop(s) and s not in low]
+            wiped.append(iid)
+        else:
+            keep = [s for s in src if s not in low]
+        for s in src:
+            if s not in keep:
+                REMOVED_LOG.append((iid, rec.get("n"), need, s.get("n"), level.get(s.get("n")), s.get("dc"), iid in wiped))
         removed += len(src) - len(keep)
         rec["src"] = keep
-    return removed
+    return removed, wiped
+
+
+REMOVED_LOG: list[tuple] = []  # (item id, name, its level, creature, creature level, chance, whole list) for review
+
+
+ITEM_LEVEL, ITEM_REQUIRED_LEVEL = 9, 10
+
+
+def drop_other_version(items: dict[int, dict], store: QuestieStore) -> list[int]:
+    """Questie's item record from another version of the game (its item level or required level
+    differs from the game client's): the creature drops it lists for that item aren't kept unless a
+    drop chance confirms them. Returns the items changed."""
+    changed = []
+    for iid, rec in items.items():
+        src = rec.get("src")
+        if not src or not store.row("Item", iid):
+            continue
+        qil, qrl = store.field("Item", iid, ITEM_LEVEL), store.field("Item", iid, ITEM_REQUIRED_LEVEL)
+        differs = (isinstance(qil, int) and qil > 0 and rec.get("il") and qil != rec["il"]) or \
+                  (isinstance(qrl, int) and qrl > 0 and rec.get("rl") and qrl != rec["rl"])
+        if not differs:
+            continue
+        questie_droppers = {store.name("Npc", n) for n in id_list(store.field("Item", iid, ITEM_NPC_DROPS))}
+        keep = [s for s in src if not (_unconfirmed_drop(s) and s.get("n") in questie_droppers)]
+        if len(keep) != len(src):
+            rec["src"] = keep
+            changed.append(iid)
+    return changed
 
 
 def merge_sources(items: dict[int, dict], questie_path: Path, chances: dict | None = None) -> tuple[int, int]:
@@ -847,9 +932,17 @@ def merge_sources(items: dict[int, dict], questie_path: Path, chances: dict | No
         found = add_cmangos_drops(items, store, zones, chances)
         if found:
             print(f"Drop sources from cmangos for items Questie has none for: {found} items")
-    dropped = drop_implausible(items, store)
+    stale = drop_other_version(items, store)
+    if stale:
+        print(f"Questie drops from another game version (item level differs from the client), unconfirmed, "
+              f"left out: {len(stale)} items ({', '.join(str(i) for i in stale[:12])}{' ...' if len(stale) > 12 else ''})")
+    dropped, wiped = drop_implausible(items, store)
     if dropped:
         print(f"Removed {dropped} drop sources from creatures far below the item's level")
+    if wiped:
+        names = ", ".join(f"{i} {items[i].get('n', '?')}" for i in wiped[:12])
+        print(f"Unconfirmed drop lists that don't fit the item's level, left out: {len(wiped)} items "
+              f"({names}{' ...' if len(wiped) > 12 else ''})")
     inferred = infer_sources(items, store, zones)
     if inferred:
         print("Inferred sources for items without one: "

@@ -77,10 +77,11 @@ local state = {
     resetScroll = false,
     flashId = nil, flashUntil = 0,
     filter = {
-        text = "", class = nil, spec = nil, slot = 0, minL = nil, maxL = nil,
+        text = "", class = nil, spec = nil, slot = 0, minL = nil, maxL = nil, instance = 0,
         quality = 3, sort = 1, usable = true, hideDone = false, favOnly = false,  -- 3 = Uncommon+
     },
 }
+ns.uiState = state  -- read-only view for tests and debugging (/dump)
 
 ---------------------------------------------------------------------------
 -- Small helpers
@@ -423,11 +424,12 @@ local function fillRow(row, d)
         setItemColumnsShown(row, true)
         row.score:Show()
         row.mark:SetText(ns:CompletionMarkup(d.id, d.class))
-        row.name:SetText(item.n or ("Item " .. d.id))
+        row.name:SetText((item.n or ("Item " .. d.id))
+            .. (ns:IsIgnored(d.id) and (" " .. ns.Skin:Hex("textDim") .. "(ignored)|r") or ""))
         row.slot:SetText(ns.SlotLabel(item.eq))
         row.lvl:SetText(levelText(item))
         row.score:SetText(scoreText(d.score, d.delta))
-        row.source:SetText(ns:SourceSummary(d.id))
+        row.source:SetText(ns:SourceSummary(d.id, d.zone))
         setRowDone(row, ns:GetCompletion(d.id, d.class) == "done")
     elseif d.kind == "header" then
         row:SetBarStyle("header")
@@ -625,19 +627,24 @@ local function buildBrowserRows()
     -- Searching by name ignores the level range too: an item you look up by name should come up
     -- even when it's a few levels below or above the range (class, slot and quality still apply).
     if text ~= "" then minL, maxL = nil, nil end
+    -- One dungeon or raid: its loot at every level (the instance sets the range).
+    local inInstance = f.instance ~= 0 and ns:InstanceItems(f.instance) or nil
+    local zone = inInstance and ns.ZoneName(f.instance) or nil
+    if inInstance then minL, maxL = nil, nil end
 
     local rows = {}
     for _, id in ipairs(ids) do
         local item = ns:GetItem(id)
         local group = item and ns.EQUIPLOC_GROUP[item.eq]
-        if group and (not groupKey or group == groupKey) and (item.q or 1) >= minQ and ns:ShowsItem(id) then
+        if group and (not groupKey or group == groupKey) and (item.q or 1) >= minQ
+            and (not inInstance or inInstance[id]) and ns:ShowsItem(id) then
             local eff = ns.EffectiveLevel(item)
             if (not minL or eff >= minL) and (not maxL or eff <= maxL)
                 and (text == "" or ns.NameMatches(item.n, text))
                 and (not f.usable or ns:IsUsable(item, f.class, level))
                 and (not f.hideDone or ns:GetCompletion(id, f.class) ~= "done") then
                 rows[#rows + 1] = { kind = "item", id = id, item = item,
-                    score = ns:Score(item, weights, ctx), class = f.class, spec = spec }
+                    score = ns:Score(item, weights, ctx), class = f.class, spec = spec, zone = zone }
             end
         end
     end
@@ -667,6 +674,9 @@ local function buildBrowserRows()
         emptyDatabaseNote(rows)
         if #rows == 0 and f.favOnly and #ids == 0 then
             rows[1] = { kind = "note", text = "No favorites yet: click the star on a row, or Alt-click it." }
+        elseif #rows == 0 and inInstance then
+            rows[1] = { kind = "note", text = "No loot from " .. (zone or "this instance")
+                .. " matches these filters (class, slot, quality, Usable only)." }
         elseif #rows == 0 then
             rows[1] = { kind = "note", text = "No items match these filters." }
         end
@@ -795,6 +805,13 @@ end
 local function updateFavButton()
     local b, sel = W.favBtn, state.selected
     if not b then return end
+    local ign = W.ignoreBtn
+    if ign then
+        local ignored = sel and ns:IsIgnored(sel.id)
+        ign:SetText(ignored and "Unignore" or "Ignore")
+        ign:SetActive(ignored and true or false)
+        ign:SetShown(sel ~= nil)
+    end
     if not sel then b:Hide() return end
     local on = ns:IsFavorite(sel.id)
     b:SetText(on and "Unfavorite" or "Favorite")
@@ -916,7 +933,7 @@ function updateDetail()
         bodyAdd("Random variants", hdr, "accent", 10)
         bodyAdd(string.format("Drops as one of %d variant%s with a random bonus; the stats above are %s.",
             #variants, #variants == 1 and "" or "s",
-            ns.LinkSuffix(sel.link) and "your equipped variant's" or "without it"), small, "textDim", 1, 6)
+            ns.LinkBonus(sel.link) and "your equipped variant's" or "without it"), small, "textDim", 1, 6)
         local rows, pending = {}, 0
         for _, v in ipairs(variants) do
             local info = ns:VariantInfo(id, v.p)
@@ -1082,8 +1099,9 @@ local function syncBrowserControls()
     W.search:SetText(f.text or "")
     W.minBox:SetText(f.minL and tostring(f.minL) or "")
     W.maxBox:SetText(f.maxL and tostring(f.maxL) or "")
-    W.classSel:Refresh(); W.specSel:Refresh(); W.slotSel:Refresh()
+    W.classSel:Refresh(); W.specSel:Refresh(); W.slotSel:Refresh(); W.instSel:Refresh()
     W.qualitySel:Refresh(); W.sortSel:Refresh()
+    state.syncLevelGroup()
     W.usableCb:SetChecked(f.usable)
     W.hideCb:SetChecked(f.hideDone)
     W.favCb:SetChecked(f.favOnly)
@@ -1152,6 +1170,36 @@ local function createBrowseBar(parent)
         tooltip = { "Equipment slot" },
     })
 
+    -- Dungeon / raid: list one instance's loot. Dungeons by the level of their loot, then raids.
+    W.instSel = Skin:Dropdown(bar, 150, {
+        getItems = function()
+            local out = { { value = 0, text = "Any source" } }
+            local index = ns:InstanceIndex()
+            local section
+            for _, inst in ipairs(index.list) do
+                local s = inst.raid and "Raids" or "Dungeons"
+                if s ~= section then
+                    section = s
+                    out[#out + 1] = { value = "header:" .. s, text = s, header = true }
+                end
+                local note = inst.minL == inst.maxL and tostring(inst.minL) or (inst.minL .. DASH .. inst.maxL)
+                out[#out + 1] = { value = inst.area, text = inst.name, note = note }
+            end
+            return out
+        end,
+        getValue = function() return f.instance end,
+        onSelect = function(v)
+            if type(v) ~= "number" or v == f.instance then return end
+            f.instance = v
+            state.syncLevelGroup()
+            filterChanged()
+        end,
+        maxVisible = 16,
+        tooltip = { "Dungeon or raid", "Lists the loot of one dungeon or raid: what its bosses, trash and "
+            .. "chests drop (rare world drops left out), at every level. The numbers are the usual "
+            .. "required levels of its loot. Class, slot, quality and Usable only still apply." },
+    })
+
     -- Level range group: "Level [min] – [max]"
     local lvl = CreateFrame("Frame", nil, bar)
     lvl:SetSize(118, 24)
@@ -1179,6 +1227,13 @@ local function createBrowseBar(parent)
     minBox:SetScript("OnTabPressed", function() maxBox:SetFocus() end)
     maxBox:SetScript("OnTabPressed", function() minBox:SetFocus() end)
     W.minBox, W.maxBox, W.lvlGroup = minBox, maxBox, lvl
+    -- An instance sets its own levels: the range is dimmed (and ignored) while one is chosen.
+    function state.syncLevelGroup()
+        local on = f.instance == 0
+        lvl:SetAlpha(on and 1 or 0.4)
+        minBox:EnableMouse(on); maxBox:EnableMouse(on)
+        if not on then minBox:ClearFocus(); maxBox:ClearFocus() end
+    end
 
     W.qualitySel = Skin:Dropdown(bar, 100, {
         getItems = function()
@@ -1220,7 +1275,7 @@ local function createBrowseBar(parent)
     -- All controls are 24px tall; yo centers the count text on the line.
     W.flow = {
         { f = search },
-        { f = W.classSel }, { f = W.specSel }, { f = W.slotSel },
+        { f = W.classSel }, { f = W.specSel }, { f = W.slotSel }, { f = W.instSel },
         { f = lvl },
         { f = W.qualitySel }, { f = W.sortSel },
         { f = W.usableCb }, { f = W.hideCb }, { f = W.favCb },
@@ -1256,13 +1311,35 @@ end
 ---------------------------------------------------------------------------
 -- Tabs
 ---------------------------------------------------------------------------
+-- The logo watermark sits in the middle of what the tab shows: the item list, the character
+-- window on the Build Simulator tab, and the whole window on Settings. Sized to fit that area.
+function state.placeWatermark()
+    local mark = frame and frame.watermark
+    if not mark then return end
+    local area = W.listBox
+    if state.tab == "settings" then
+        area = frame
+    elseif state.tab == "simulator" and W.sim and W.sim.characterPane then
+        area = W.sim.characterPane
+    end
+    if not area then return end
+    mark:ClearAllPoints()
+    mark:SetPoint("CENTER", area, "CENTER", 0, 0)
+    local w, h = area:GetWidth() or 0, area:GetHeight() or 0
+    local size = math.max(120, math.min(320, math.floor(math.min(w, h) * 0.7)))
+    mark:SetSize(size, size)
+end
+
 local function applyTab(tab)
-    state.tab = (tab == "browser" or tab == "settings") and tab or "recommended"
+    state.tab = (tab == "browser" or tab == "settings" or tab == "simulator") and tab or "recommended"
     local settings = state.tab == "settings"
-    W.left:SetShown(not settings)
-    W.detail:SetShown(not settings)
+    local sim = state.tab == "simulator"
+    W.left:SetShown(not (settings or sim))
+    W.detail:SetShown(not (settings or sim))
     W.settings:SetShown(settings)
+    W.sim:SetShown(sim)
     W.settingsTab:SetActive(settings)
+    W.simTab:SetActive(sim)
     local active = state.tab == "browser" and W.browseBar or W.recBar
     W.recBar:SetShown(state.tab == "recommended")
     W.browseBar:SetShown(state.tab == "browser")
@@ -1272,6 +1349,7 @@ local function applyTab(tab)
     W.recTab:SetActive(state.tab == "recommended")
     W.browseTab:SetActive(state.tab == "browser")
     if state.tab == "browser" then layoutBrowseBar() end
+    state.placeWatermark()
     state.resetScroll = true
 end
 
@@ -1364,6 +1442,29 @@ local function createDetail(content)
     fav:Hide()
     W.favBtn = fav
 
+    -- Ignore toggle: bans the item from every recommendation (it stays in the Gear Browser).
+    local ign = Skin:Button(detail, "Ignore", 90, Skin.CONTROL_H)
+    ign:SetPoint("LEFT", fav, "RIGHT", 8, 0)
+    ign:SetScript("OnClick", function()
+        local sel = state.selected
+        if not sel then return end
+        local on = ns:ToggleIgnored(sel.id)
+        local name = (ns:GetItem(sel.id) or {}).n or ("item " .. sel.id)
+        ns.Print(on and (name .. " is ignored: GearGuide won't recommend it any more.")
+            or (name .. " is no longer ignored."))
+    end)
+    ign:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:AddLine(ns:IsIgnored(state.selected and state.selected.id) and "Unignore" or "Ignore", 1, 1, 1)
+        GameTooltip:AddLine("Ignored items are never recommended: not on the Recommended tab, in the mini tracker, "
+            .. "the zone list, the Gear Acquired pop-up, creature tooltips or the Build Simulator's recommended build. "
+            .. "They still show in the Gear Browser. Settings can clear the list.", 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    ign:SetScript("OnLeave", hideTooltip)
+    ign:Hide()
+    W.ignoreBtn = ign
+
     local sf = CreateFrame("ScrollFrame", nil, detail)
     sf:SetPoint("TOPLEFT", fav, "BOTTOMLEFT", 0, -8)
     sf:SetPoint("BOTTOMRIGHT", detail, "BOTTOMRIGHT", -12, 8)
@@ -1441,14 +1542,7 @@ local function createListBox(left)
     list.frame:SetPoint("TOPLEFT", ch, "BOTTOMLEFT", 0, -ROW_GAP)
     list.frame:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -1, 1)
     list.frame:HookScript("OnSizeChanged", function() updateColHeader() end)
-    if frame.watermark then
-        frame.watermark:ClearAllPoints()
-        frame.watermark:SetPoint("CENTER", box, "CENTER", 0, 0)
-        box:HookScript("OnSizeChanged", function(_, w, h)
-            local size = math.max(120, math.min(320, math.floor(math.min(w or 0, h or 0) * 0.7)))
-            frame.watermark:SetSize(size, size)
-        end)
-    end
+    box:HookScript("OnSizeChanged", function() state.placeWatermark() end)
     list:SetSelected(isSelected)
 end
 
@@ -1460,7 +1554,7 @@ local function createWindow()
 
     frame = Skin:CreateWindow("GearGuideFrame", {
         title = "GearGuide", subtitle = "", titleSize = 17, headerHeight = 40,
-        watermark = "Interface\\AddOns\\GearGuide\\Media\\logo", watermarkAlpha = 0.22, vignette = 140,
+        watermark = "Interface\\AddOns\\GearGuide\\Media\\logo", watermarkAlpha = 0.17, vignette = 140,
         width = w, height = h, onMoved = savePosition, escClose = true,
     })
     if UISpecialFrames then
@@ -1474,6 +1568,7 @@ local function createWindow()
     end
     frame:Hide()
     frame:SetScale(tonumber(db.scale) or 1)
+    ns.Skin:RefreshPixels()  -- the window's own border was drawn at scale 1
     Skin:ResizeGrip(frame, MIN_W, MIN_H, MAX_W, MAX_H, saveSize)
 
     -- Header: title / dim subtitle (class · spec · level range) ........ Mini | Spec | x
@@ -1542,8 +1637,11 @@ local function createWindow()
     W.browseTab = Skin:Tab(strip, "Gear Browser", 30)
     W.browseTab:SetPoint("LEFT", W.recTab, "RIGHT", 6, 0)
     W.browseTab:SetScript("OnClick", function() setTab("browser") end)
+    W.simTab = Skin:Tab(strip, "Build Simulator", 30)
+    W.simTab:SetPoint("LEFT", W.browseTab, "RIGHT", 6, 0)
+    W.simTab:SetScript("OnClick", function() setTab("simulator") end)
     W.settingsTab = Skin:Tab(strip, "Settings", 30)
-    W.settingsTab:SetPoint("LEFT", W.browseTab, "RIGHT", 6, 0)
+    W.settingsTab:SetPoint("LEFT", W.simTab, "RIGHT", 6, 0)
     W.settingsTab:SetScript("OnClick", function() setTab("settings") end)
 
     -- Footer
@@ -1605,6 +1703,15 @@ local function createWindow()
     W.settings:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, FOOTER_H + GAP)
     W.settings:Hide()
 
+    -- Build simulator tab (Simulator.lua): same place as Settings.
+    W.sim = ns:CreateSimulatorPanel(content)
+    W.sim:SetPoint("TOPLEFT", W.tabStrip, "BOTTOMLEFT", 0, -GAP)
+    W.sim:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, FOOTER_H + GAP)
+    W.sim:Hide()
+    -- The watermark follows the character window and the whole window as they resize.
+    if W.sim.characterPane then W.sim.characterPane:HookScript("OnSizeChanged", function() state.placeWatermark() end) end
+    frame:HookScript("OnSizeChanged", function() state.placeWatermark() end)
+
     W.flashDriver = CreateFrame("Frame", nil, frame)
     W.flashDriver:Hide()
     W.flashDriver:SetScript("OnUpdate", updateFlash)
@@ -1625,6 +1732,11 @@ local function createWindow()
         for k in pairs(pendingIcons) do pendingIcons[k] = nil end
     end)
 
+    -- "NEW" badges on this version's standout features (once per account, after an update).
+    ns:AttachNewBadge(W.simTab, "simulatorTab", "click")
+    ns:AttachNewBadge(W.instSel, "instanceMenu", "click")
+    ns:AttachNewBadge(W.ignoreBtn, "ignoreButton", "view")
+
     applyTab("recommended")
     updateDetail()
 end
@@ -1639,6 +1751,7 @@ local function revealInBrowser(id, item)
     if f.text ~= "" and not ns.NameMatches(item.n, f.text:lower()) then f.text = "" end
     local key = ns.EQUIPLOC_GROUP[item.eq]
     if f.slot > 0 and ns.SLOT_GROUPS[f.slot].key ~= key then f.slot = 0 end
+    if f.instance ~= 0 and not (ns:InstanceItems(f.instance) or {})[id] then f.instance = 0 end
     local eff = ns.EffectiveLevel(item)
     if f.minL and eff < f.minL then f.minL = eff end
     if f.maxL and eff > f.maxL then f.maxL = eff end
@@ -1672,6 +1785,11 @@ function ns:RefreshUI()
     updateSubtitle()
     if state.tab == "settings" then
         W.settings:Refresh()
+        updateStatus()
+        return
+    end
+    if state.tab == "simulator" then
+        W.sim:Refresh()
         updateStatus()
         return
     end

@@ -1,0 +1,27 @@
+CurseForge image titles and descriptions (Project -> Images -> Upload, one per file)
+
+1-recommended.png
+  Title: Recommended upgrades
+  Description: Best upgrades for your spec and level, grouped by slot, with the score gain over what
+  you have equipped and where each item comes from, including drop chances.
+
+2-gear-browser.png
+  Title: Gear Browser
+  Description: Search every item in the game by class, spec, slot, level range and quality, sorted by
+  how good it is for you.
+
+3-mini-tracker.png
+  Title: Mini tracker
+  Description: A small, movable list of your top upgrades. In a zone or dungeon it lists what drops
+  there, who drops it and how often.
+
+4-mini-tracker-hover-mode.png
+  Title: Mini tracker - hover mode
+  Description: Hover mode hides the header and background so only the list shows; they come back when
+  you mouse over it.
+
+5-build-simulator.png
+  Title: Build Simulator
+  Description: Try on any gear and see your stats with it. The Recommended build fills every slot with
+  the best gear for your level, and "Where to get this set" lists what you still need, by dungeon,
+  raid or zone. Save your sets as named builds.

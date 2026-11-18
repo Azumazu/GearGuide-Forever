@@ -52,7 +52,7 @@ function ns:LearnLink(link, src)
         self:InvalidateItems()
     end
     -- A random variant ("...of the Falcon") is credited to the base item; its bonus is remembered.
-    self:RememberVariant(id, ns.LinkSuffix(link))
+    self:RememberVariant(id, self:LinkVariant(link))
     -- A creature nobody listed yet for this item (shipped data, own or shared finds): announce it.
     local fresh = src and src.t == "drop" and src.n and src.n ~= "Container" and not self:ListsDropper(id, src.n)
     if not (src and addSource(id, src)) then return end

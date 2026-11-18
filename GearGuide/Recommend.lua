@@ -252,6 +252,7 @@ function ns:BuildRecommendations()
         -- Uncommon (green) and better only: common/poor gear is vendor filler, not worth a slot
         -- in the list (favorites are added separately and still show).
         if groups and (item.q or 1) >= minQ and eff >= minL and eff <= maxL
+            and not self:IsIgnored(id) and not self:RaidGearTooEarly(item, level)
             and self:ShowsItem(id) and self:IsUsable(item, ctx.class, level)
             and ns.WeaponTypeAllowed(item, ctx.class, ctx.spec, level) then
             local score = self:Score(item, weights, ctx)

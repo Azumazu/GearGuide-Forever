@@ -425,6 +425,7 @@ local function createFrame()
 
     f:SetScript("OnUpdate", function(_, dt) updateChrome(dt) end)
     f:SetScale(miniScale())  -- before positioning: the saved offsets are in the frame's scaled units
+    ns.Skin:RefreshPixels()
     restorePosition(f)
     return f
 end
@@ -691,6 +692,7 @@ function ns:SetMiniScale(s)
     local old = frame:GetScale() or 1
     local left, top = frame:GetLeft(), frame:GetTop()
     frame:SetScale(s)
+    ns.Skin:RefreshPixels()
     if left and top and old ~= s then
         frame:ClearAllPoints()
         frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left * old / s, top * old / s)

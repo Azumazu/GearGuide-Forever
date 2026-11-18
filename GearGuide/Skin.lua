@@ -108,12 +108,92 @@ end
 ---------------------------------------------------------------------------
 -- Backdrops and text
 ---------------------------------------------------------------------------
-local BACKDROP = { bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 }
+---------------------------------------------------------------------------
+-- Hairlines: borders, dividers and outlines are exactly one screen pixel. A line of 1 UI unit is
+-- less than a pixel when the UI scale (the game's, times the window's) is below 1, and the game
+-- then rounds some of them away depending on where they land (a box missing its left edge).
+-- One pixel is computed per frame from its effective scale, and redone when a scale changes.
+---------------------------------------------------------------------------
+local edgeFrames = setmetatable({}, { __mode = "k" })  -- frames with a skin border -> true
+local hairLines = setmetatable({}, { __mode = "k" })   -- textures -> "h" (height) or "v" (width)
+local lineSize = setmetatable({}, { __mode = "k" })    -- texture -> size last set
+
+local function onePixel(frame)
+    local _, h = nil, nil
+    if GetPhysicalScreenSize then _, h = GetPhysicalScreenSize() end
+    local scale = frame and frame.GetEffectiveScale and frame:GetEffectiveScale()
+    if not h or h <= 0 or not scale or scale <= 0 then return 1 end
+    return 768 / (h * scale)
+end
+Skin.Pixel = function(_, frame) return onePixel(frame) end
+
+local backdrops = {}  -- edge size -> backdrop table (shared)
+local function backdropFor(px)
+    local b = backdrops[px]
+    if not b then
+        b = { bgFile = WHITE, edgeFile = WHITE, edgeSize = px }
+        backdrops[px] = b
+    end
+    return b
+end
+
+local function sizeLine(tex)
+    local axis = hairLines[tex]
+    local px = onePixel(tex:GetParent())
+    if not axis or lineSize[tex] == px then return end
+    lineSize[tex] = px
+    if axis == "h" then tex:SetHeight(px) else tex:SetWidth(px) end
+end
+
+-- Marks a texture as a 1px line ("h": horizontal, sized by height; "v": vertical).
+local function hairline(tex, axis)
+    hairLines[tex] = axis
+    sizeLine(tex)
+    return tex
+end
+Skin.Hairline = function(_, tex, axis) return hairline(tex, axis) end
+
+-- Re-sizes a frame's border for its current scale, keeping its colors.
+local function applyEdge(frame)
+    local px = onePixel(frame)
+    if frame.ggEdge == px then return end
+    frame.ggEdge = px
+    if frame.SetBackdrop then
+        local r, g, b, a
+        if frame.GetBackdropColor then r, g, b, a = frame:GetBackdropColor() end
+        local er, eg, eb, ea
+        if frame.GetBackdropBorderColor then er, eg, eb, ea = frame:GetBackdropBorderColor() end
+        frame:SetBackdrop(backdropFor(px))
+        if r then frame:SetBackdropColor(r, g, b, a) end
+        if er then frame:SetBackdropBorderColor(er, eg, eb, ea) end
+    end
+end
+
+-- After a scale change (game UI scale, resolution, a window's own scale): every hairline again.
+function Skin:RefreshPixels()
+    for frame in pairs(edgeFrames) do applyEdge(frame) end
+    for tex in pairs(hairLines) do sizeLine(tex) end
+end
+
+do
+    local ev = CreateFrame("Frame")
+    for _, e in ipairs({ "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED", "PLAYER_ENTERING_WORLD" }) do
+        pcall(ev.RegisterEvent, ev, e)
+    end
+    ev:SetScript("OnEvent", function()
+        -- After the client has applied the new scale.
+        if C_Timer and C_Timer.After then C_Timer.After(0, function() Skin:RefreshPixels() end)
+        else Skin:RefreshPixels() end
+    end)
+end
 
 function Skin:SetBackdrop(frame, bgKey, borderKey)
     local bg, border = col(bgKey or "bg"), col(borderKey or "border")
+    edgeFrames[frame] = true
     if frame.SetBackdrop then
-        frame:SetBackdrop(BACKDROP)
+        local px = onePixel(frame)
+        frame.ggEdge = px
+        frame:SetBackdrop(backdropFor(px))
         frame:SetBackdropColor(bg[1], bg[2], bg[3], bg[4] or 1)
         frame:SetBackdropBorderColor(border[1], border[2], border[3], border[4] or 1)
         return
@@ -124,10 +204,10 @@ function Skin:SetBackdrop(frame, bgKey, borderKey)
         t = { bg = frame:CreateTexture(nil, "BACKGROUND", nil, -8) }
         t.bg:SetAllPoints()
         for i = 1, 4 do t[i] = frame:CreateTexture(nil, "BORDER") end
-        t[1]:SetPoint("TOPLEFT"); t[1]:SetPoint("TOPRIGHT"); t[1]:SetHeight(1)
-        t[2]:SetPoint("BOTTOMLEFT"); t[2]:SetPoint("BOTTOMRIGHT"); t[2]:SetHeight(1)
-        t[3]:SetPoint("TOPLEFT"); t[3]:SetPoint("BOTTOMLEFT"); t[3]:SetWidth(1)
-        t[4]:SetPoint("TOPRIGHT"); t[4]:SetPoint("BOTTOMRIGHT"); t[4]:SetWidth(1)
+        t[1]:SetPoint("TOPLEFT"); t[1]:SetPoint("TOPRIGHT"); hairline(t[1], "h")
+        t[2]:SetPoint("BOTTOMLEFT"); t[2]:SetPoint("BOTTOMRIGHT"); hairline(t[2], "h")
+        t[3]:SetPoint("TOPLEFT"); t[3]:SetPoint("BOTTOMLEFT"); hairline(t[3], "v")
+        t[4]:SetPoint("TOPRIGHT"); t[4]:SetPoint("BOTTOMRIGHT"); hairline(t[4], "v")
         frame.ggFlat = t
     end
     setTex(t.bg, bg)
@@ -177,8 +257,7 @@ end
 function Skin:Divider(parent, colorKey)
     local t = parent:CreateTexture(nil, "ARTWORK")
     setTex(t, colorKey or "border")
-    t:SetHeight(1)
-    return t
+    return hairline(t, "h")
 end
 
 ---------------------------------------------------------------------------
@@ -517,13 +596,13 @@ function Skin:WindowBackdrop(f, opts)
     return f
 end
 
--- Flat text tab: dim label, brighter on hover, copper text + 2px copper underline when active.
--- t:SetActive(on), t:IsActive(); width follows the label (+ 15px padding per side).
+-- Flat text tab: soft white label, full white on hover, copper text + 2px copper underline when
+-- active. t:SetActive(on), t:IsActive(); width follows the label (+ 15px padding per side).
 function Skin:Tab(parent, text, height)
     local t = CreateFrame("Button", nil, parent)
     t:SetHeight(height or 30)
     t:RegisterForClicks("LeftButtonUp")
-    local fs = self:Text(t, Skin.SIZE.header, "textDim")
+    local fs = self:Text(t, Skin.SIZE.header + 1, "text")
     fs:SetPoint("CENTER", 0, 1)
     fs:SetWordWrap(false)
     t.text = fs
@@ -536,7 +615,7 @@ function Skin:Tab(parent, text, height)
     t.underline = bar
     t.active, t.hovered = false, false
     local function look(self)
-        setTextColor(fs, self.active and "accent" or (self.hovered and "text" or "textDim"))
+        setTextColor(fs, self.active and "accent" or "text", (self.active or self.hovered) and 1 or 0.8)
         bar:SetShown(self.active)
     end
     function t:SetText(s)
@@ -1024,10 +1103,10 @@ function Skin:BarRow(row, height)
         t:Hide()
         outline[i] = t
     end
-    outline[1]:SetPoint("TOPLEFT"); outline[1]:SetPoint("TOPRIGHT"); outline[1]:SetHeight(1)
-    outline[2]:SetPoint("BOTTOMLEFT"); outline[2]:SetPoint("BOTTOMRIGHT"); outline[2]:SetHeight(1)
-    outline[3]:SetPoint("TOPRIGHT"); outline[3]:SetPoint("BOTTOMRIGHT"); outline[3]:SetWidth(1)
-    outline[4]:SetPoint("TOPLEFT", BAR_Q_W, 0); outline[4]:SetPoint("BOTTOMLEFT", BAR_Q_W, 0); outline[4]:SetWidth(1)
+    outline[1]:SetPoint("TOPLEFT"); outline[1]:SetPoint("TOPRIGHT"); hairline(outline[1], "h")
+    outline[2]:SetPoint("BOTTOMLEFT"); outline[2]:SetPoint("BOTTOMRIGHT"); hairline(outline[2], "h")
+    outline[3]:SetPoint("TOPRIGHT"); outline[3]:SetPoint("BOTTOMRIGHT"); hairline(outline[3], "v")
+    outline[4]:SetPoint("TOPLEFT", BAR_Q_W, 0); outline[4]:SetPoint("BOTTOMLEFT", BAR_Q_W, 0); hairline(outline[4], "v")
     row.barOutline = outline
 
     local q = row:CreateTexture(nil, "ARTWORK")
@@ -1368,6 +1447,7 @@ local function openMenu(dd)
     -- Match the owner's scale, so the menu looks the same size as the button.
     local ui = UIParent:GetEffectiveScale() or 1
     if ui > 0 then m:SetScale((dd:GetEffectiveScale() or ui) / ui) end
+    applyEdge(m)
     m:SetSize(w, m.numVisible * DD_ITEM_H + DD_PAD * 2)
 
     -- Open below the button, or above it when there is no room below.

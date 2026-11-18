@@ -32,6 +32,7 @@ function ns:ApplyToastLayout()
     if not frame then return end
     local d = db()
     frame:SetScale(tonumber(d.scale) or 1)
+    ns.Skin:RefreshPixels()
     frame:SetWidth(math.max(MIN_W, math.min(MAX_W, tonumber(d.w) or 300)))
     frame:ClearAllPoints()
     local pt = d.point
