@@ -85,7 +85,7 @@
       "weights": {
         "STA": 1.0,
         "DEF": 1.0,
-        "SP": 0.8,
+        "SP": 1.0,
         "INT": 0.55,
         "HIT": 9.0,
         "SHIT": 9.0,
@@ -94,12 +94,12 @@
         "BLOCK": 6.0,
         "ARMOR": 0.1,
         "AGI": 0.55,
-        "STR": 0.45,
+        "STR": 0.25,
         "MP5": 0.5,
         "CRIT": 3.0,
         "SCRIT": 3.0,
         "DPS": 1.0,
-        "AP": 0.2,
+        "AP": 0.1,
         "EXPERTISE": 7.5
       },
       "caps": [
@@ -109,14 +109,19 @@
       ],
       "leveling": {
         "DPS": 3.5,
-        "STR": 0.8,
-        "AP": 0.4,
+        "STR": 0.5,
+        "AP": 0.2,
         "DEF": 0.4,
-        "SP": 1.0
+        "SP": 1.3
       },
       "confidence": "low",
-      "notes": "STA anchored at 1.0. Sources disagree: wow.gg level-60 guide stamina > defense > spell power > intellect > strength; Gfinity puts hit cap first then defense/block, stamina/armor, spell power, strength; wow.gg beta was offensive (weapon damage, hit, STR, INT, SP). Followed the level-60 wow.gg order and slotted hit/avoidance after INT. Forever: Protection threat scales with spell power (Holy Shield, Consecration, Seal of Fury, Retribution Aura), Shield Specialization returns 4% mana on block and Holy Shield adds 30% block, so BLOCK is closer to DODGE than in classic. Hit/crit unified so SHIT/SCRIT mirror HIT/CRIT. Priority is guide importance; percent stats are per 1%. HASTE not ranked by guides for tanks; omitted.",
+      "notes": "STA anchored at 1.0. Sources disagree: wow.gg level-60 guide stamina > defense > spell power > intellect > strength; Gfinity puts hit cap first then defense/block, stamina/armor, spell power, strength; wow.gg beta was offensive (weapon damage, hit, STR, INT, SP). Followed the level-60 wow.gg order and slotted hit/avoidance after INT. Forever: Protection threat scales with spell power (Holy Shield, Consecration, Seal of Fury, Retribution Aura), Shield Specialization returns 4% mana on block and Holy Shield adds 30% block, so BLOCK is closer to DODGE than in classic. Hit/crit unified so SHIT/SCRIT mirror HIT/CRIT. Priority is guide importance; percent stats are per 1%. HASTE not ranked by guides for tanks; omitted. 2026-11-17 hotfix: Blizzard is \"leaning more into Paladin tanks favoring Spell Power\" for damage and moved the Soulforge Armor tank set from Strength to Spell Power, so SP = STA here (was 0.8) and STR drops to 0.25 (block value and a little AP only); leveling SP 1.3 over STR 0.5.",
       "sources": [
+        {
+          "url": "https://www.mmo-champion.com/content/14703-WoW-Forever-Hotfixes-November-17-2026",
+          "date_or_status": "Blizzard hotfixes, 2026-11-17",
+          "used_for": "tanks favor Spell Power; Soulforge Armor Strength -> Spell Power"
+        },
         {
           "url": "https://wow.gg/guides/wow-forever-protection-paladin",
           "date_or_status": "level 60, updated 2026-11-04",

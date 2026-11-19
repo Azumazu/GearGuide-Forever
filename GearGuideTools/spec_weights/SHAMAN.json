@@ -94,9 +94,9 @@
         "CRIT": 10.0,
         "SCRIT": 10.0,
         "STR": 1.0,
-        "INT": 0.7,
+        "INT": 0.55,
         "AP": 0.5,
-        "SP": 0.45,
+        "SP": 0.3,
         "AGI": 0.4,
         "STA": 0.15,
         "MP5": 0.1,
@@ -112,12 +112,17 @@
         "STA": 0.4,
         "HIT": 8.0,
         "SHIT": 8.0,
-        "INT": 0.5,
+        "INT": 0.4,
         "EXPERTISE": 6.0
       },
       "confidence": "medium",
-      "notes": "Every source puts weapon damage first. Use a slow two-hander: Shamans cannot dual wield in Forever (wow.gg), and Flurry, Windfury and Stormstrike scale with weapon speed and damage. Then Hit > Expertise > Crit > Strength (wow.gg and WT both put Expertise next to or tied with Hit; it replaces the old weapon-skill bonuses). 1 STR = 2 AP; 14 AP = 1 DPS. In Forever, Mental Dexterity converts INT to AP (Warcraft Tavern: 1 INT = 1 AP, i.e. half a STR); one unverified comment says it was raised to 150%. Mental Quickness lets INT/SP scale spell damage. So INT sits just below STR, and the WT overview even ties them. Shaman AGI gives crit (1% per 20 AGI) but no AP, so AGI comes last (as in WT). Hit and crit are unified, so HIT=SHIT and CRIT=SCRIT; percent stats are per 1%. Haste exists, but no Enhancement guide ranks it. Windfury Totem is a permanent aura (no totem twisting). WT's priority still reflects the level 30 beta.",
+      "notes": "Every source puts weapon damage first. Use a slow two-hander: Shamans cannot dual wield in Forever (wow.gg), and Flurry, Windfury and Stormstrike scale with weapon speed and damage. Then Hit > Expertise > Crit > Strength (wow.gg and WT both put Expertise next to or tied with Hit; it replaces the old weapon-skill bonuses). 1 STR = 2 AP; 14 AP = 1 DPS. In Forever, Mental Dexterity converts INT to AP (Warcraft Tavern: 1 INT = 1 AP, i.e. half a STR); one unverified comment says it was raised to 150%. Mental Quickness lets INT/SP scale spell damage. So INT sits just below STR, and the WT overview even ties them. Shaman AGI gives crit (1% per 20 AGI) but no AP, so AGI comes last (as in WT). Hit and crit are unified, so HIT=SHIT and CRIT=SCRIT; percent stats are per 1%. Haste exists, but no Enhancement guide ranks it. Windfury Totem is a permanent aura (no totem twisting). WT's priority still reflects the level 30 beta. 2026-11-10 hotfix (Blizzard: Enhancement favored Spell Power and Intellect gear too heavily): Mental Dexterity now 33/66/100% INT to AP (was 50/100/150%), so 1 INT = 1 AP = half a STR: INT 0.7 -> 0.55 (AP value plus a little mana and spell crit). Maelstrom Weapon now 6-10 procs a minute (was 20), so the spell side shrinks: SP 0.45 -> 0.3. Windfury Weapon and Windfury Totem now stack and Rage of the Storm became a Strength weapon, so weapon damage, STR and AP lead; Stormstrike now 100% weapon damage on an 8 s cooldown (was 150%, 6 s).",
       "sources": [
+        {
+          "url": "https://www.bluetracker.gg/wow/topic/us-en/24315281-wow-forever-hotfixes-november-16-2026/",
+          "date_or_status": "Blizzard hotfixes (verbatim copy), 2026-11-10",
+          "used_for": "Mental Dexterity 100%, Maelstrom procs, Windfury stacking, Stormstrike, dev note on SP/INT"
+        },
         {
           "url": "https://wow.gg/guides/wow-forever-enhancement-shaman",
           "date_or_status": "2026-11-04",

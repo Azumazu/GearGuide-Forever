@@ -60,10 +60,12 @@ end
 
 -- Weapon subclasses: 0 1H axe, 1 2H axe, 2 bow, 3 gun, 4 1H mace, 5 2H mace, 6 polearm, 7 1H sword,
 -- 8 2H sword, 10 staff, 13 fist, 15 dagger, 16 thrown, 18 crossbow, 19 wand.
+-- Weapons worth wearing, not every weapon the class can equip: hunters leave out thrown (16),
+-- since Auto Shot and the hunter shots need a bow, gun or crossbow.
 ns.WEAPON_PROF = {
     WARRIOR = set(0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 13, 15, 16, 18),
     PALADIN = set(0, 1, 4, 5, 6, 7, 8),
-    HUNTER  = set(0, 1, 2, 3, 6, 7, 8, 10, 13, 15, 16, 18),
+    HUNTER  = set(0, 1, 2, 3, 6, 7, 8, 10, 13, 15, 18),
     ROGUE   = set(2, 3, 4, 7, 13, 15, 16, 18),
     SHAMAN  = set(0, 1, 4, 5, 10, 13, 15),
     DRUID   = set(4, 5, 10, 13, 15),
