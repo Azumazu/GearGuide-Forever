@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: GearGuide
 ## Notes: Recommends the best gear for your class and level, shows where to get it, and lets you browse every item.
-## Version: 0.17.0
+## Version: 0.17.1
 ## X-License: GPL-3.0-or-later
 ## IconTexture: Interface\AddOns\GearGuide\Media\icon
 ## SavedVariables: GearGuideDB, GearGuideLearned, GearGuideHarvest
