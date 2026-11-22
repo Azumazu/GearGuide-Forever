@@ -1,13 +1,20 @@
 local _, ns = ...
 
--- In-game source sharing between GearGuide users (guild and group), opt-out via the "Sharing"
--- button or /gg sharing off.
---   Sent:     item ID, source type, creature/quest/vendor name, zone. Nothing about the player.
---   Channels: invisible addon messages to GUILD / PARTY / RAID only; never public channels.
+-- In-game source sharing between GearGuide users (realm, guild and group), opt-out via the
+-- "Sharing" button or /gg sharing off.
+--   Sent:     item ID, source type, creature/quest/vendor name, zone. Nothing about the player:
+--             no inventory, gear, level, gold or play time.
+--   Channels: invisible addon messages to GUILD / PARTY / RAID, and to a hidden custom chat channel
+--             (CHANNEL_NAME) that every GearGuide copy with sharing on joins, so users on the same
+--             realm reach each other without meeting. The channel is taken out of the chat windows
+--             and its notices are filtered: nothing appears in chat. Left when sharing is turned
+--             off. If joining fails (all channel slots used, or a client that blocks it), guild and
+--             group sharing still work.
 --   Load:     only sources this player saw for the first time, batched, max one message per
 --             SEND_INTERVAL, never in combat or instances (Blizzard UI Add-On Policy rule 3).
 --   Received: validated, only for items in our database, capped per sender; stored separately in
---             GearGuideLearned.shared with a count of distinct senders (names are not stored).
+--             GearGuideLearned.shared with a count of distinct senders per session (names are not
+--             stored). Releases ship a shared source only after 3+ reports (build_db.py).
 --   Version:  "V^1.2.3" rides along (once per session per channel kind). Hearing a newer version
 --             prints an update notice once; hearing an older one answers with ours so its owner
 --             gets the notice. Addons can't reach the internet: this is how GearGuide learns that a
@@ -20,6 +27,8 @@ local OUTBOX_LIMIT = 200
 local RECENT_LIMIT = 40            -- own observations re-shared once when joining a group / logging in
 local MAX_PER_SENDER = 300         -- accepted entries per sender per session
 local MAX_NAME, MAX_ZONE = 60, 40
+local CHANNEL_NAME = "GearGuideShare"
+local JOIN_DELAY = 15              -- seconds after login, so General/Trade/LocalDefense keep numbers 1-4
 local TYPE_CODE = { drop = "d", quest = "q", vendor = "v", craft = "c" }
 local CODE_TYPE = { d = "drop", q = "quest", v = "vendor", c = "craft" }
 
@@ -31,7 +40,7 @@ local REPLY_COOLDOWN = 300         -- seconds between version answers to older v
 local lastReply = -REPLY_COOLDOWN
 local heardFrom = {}       -- sourceKey -> { [sender] = true } this session only (not saved)
 local senderCount = {}     -- sender -> entries accepted this session
-local sharedRecentDone = { GUILD = false, GROUP = false }
+local sharedRecentDone = { GUILD = false, GROUP = false, CHANNEL = false }
 local ticker
 
 function ns:IsSharingEnabled()
@@ -122,8 +131,20 @@ local function canSendNow()
     return true
 end
 
+-- The hidden channel's number in this session's channel list (0 = not joined).
+local function channelIndex()
+    if not GetChannelName then return 0 end
+    local ok, id = pcall(GetChannelName, CHANNEL_NAME)
+    id = ok and ns.Plain(id)
+    return type(id) == "number" and id or 0
+end
+ns.ShareChannelIndex = channelIndex
+
+-- Targets: "GUILD" / "PARTY" / "RAID", or { "CHANNEL", number } for the hidden channel.
 local function channels()
     local list = {}
+    local chan = channelIndex()
+    if chan > 0 then list[#list + 1] = { "CHANNEL", chan } end
     if IsInGuild and IsInGuild() then list[#list + 1] = "GUILD" end
     if IsInRaid and IsInRaid() then
         list[#list + 1] = "RAID"
@@ -148,7 +169,11 @@ local function flush()
     end
     local message = table.concat(parts, ";")
     for _, channel in ipairs(targets) do
-        pcall(sendAddon, PREFIX, message, channel)
+        if type(channel) == "table" then
+            pcall(sendAddon, PREFIX, message, channel[1], channel[2])
+        else
+            pcall(sendAddon, PREFIX, message, channel)
+        end
     end
 end
 
@@ -229,12 +254,52 @@ function ns:GetSharedSources(id)
 end
 
 ---------------------------------------------------------------------------
+-- The hidden realm channel
+---------------------------------------------------------------------------
+local function hideChannel()
+    if not ChatFrame_RemoveChannel then return end
+    for i = 1, (NUM_CHAT_WINDOWS or 10) do
+        local cf = _G["ChatFrame" .. i]
+        if cf then pcall(ChatFrame_RemoveChannel, cf, CHANNEL_NAME) end
+    end
+end
+
+local function joinChannel()
+    if not ns:IsSharingEnabled() or not JoinTemporaryChannel then return end
+    if InCombatLockdown and InCombatLockdown() then  -- chat channel calls are blocked then: retry
+        C_Timer.After(JOIN_DELAY, joinChannel)
+        return
+    end
+    if channelIndex() == 0 then pcall(JoinTemporaryChannel, CHANNEL_NAME) end
+    C_Timer.After(3, function()
+        hideChannel()
+        if channelIndex() > 0 then shareRecent("CHANNEL") end
+    end)
+end
+
+local function leaveChannel()
+    if channelIndex() > 0 and LeaveChannelByName then pcall(LeaveChannelByName, CHANNEL_NAME) end
+    sharedRecentDone.CHANNEL = false
+end
+
+-- Chat filter: hides "Joined Channel: GearGuideShare" and the channel's other notices.
+local OUR_CHANNEL = CHANNEL_NAME:lower()
+local function isOurNotice(_, _, ...)
+    for i = 4, 9 do
+        local v = ns.Plain((select(i, ...)))
+        if type(v) == "string" and v:lower():find(OUR_CHANNEL, 1, true) then return true end
+    end
+    return false
+end
+
+---------------------------------------------------------------------------
 -- Setup and opt-out
 ---------------------------------------------------------------------------
 function ns:SetSharing(on)
     GearGuideDB.sharing = on and true or false
-    if not on then wipe(outbox) end
-    ns.Print(on and "Source sharing is on: new item sources you find are shared with GearGuide users in your guild and group."
+    if on then joinChannel() else wipe(outbox); leaveChannel() end
+    ns.Print(on and "Source sharing is on: new item sources you find are shared with GearGuide users on your realm, "
+        .. "in your guild and in your group."
         or "Source sharing is off: GearGuide no longer sends or receives item sources.")
     if ns.RefreshUI then ns:RefreshUI() end
 end
@@ -243,12 +308,14 @@ function ns:StartComm()
     GearGuideLearned.shared = GearGuideLearned.shared or {}
     GearGuideLearned.recentShared = GearGuideLearned.recentShared or {}
     if GearGuideDB.sharing == nil then GearGuideDB.sharing = true end
-    if not GearGuideDB.sharingNotice then
-        GearGuideDB.sharingNotice = true
+    -- Notice version 2: shown again once, since sharing now reaches the realm, not only guild and group.
+    if GearGuideDB.sharingNotice ~= 2 and GearGuideDB.sharing then
         ns.Print("GearGuide shares item sources (which creature, quest or vendor gives an item) with other "
-            .. "GearGuide users in your guild and group, invisibly and without any character data. "
+            .. "GearGuide users on your realm, in your guild and in your group, invisibly and without any "
+            .. "character data: never your inventory, gear, level or gold. "
             .. "Turn it off with the Sharing button in the window or /gg sharing off.")
     end
+    GearGuideDB.sharingNotice = 2
     if registerPrefix then pcall(registerPrefix, PREFIX) end
 
     local f = CreateFrame("Frame")
@@ -269,6 +336,12 @@ function ns:StartComm()
     C_Timer.After(60, function()
         if IsInGuild and IsInGuild() then shareRecent("GUILD") end
     end)
+    if ChatFrame_AddMessageEventFilter then
+        for _, e in ipairs({ "CHAT_MSG_CHANNEL_NOTICE", "CHAT_MSG_CHANNEL_NOTICE_USER" }) do
+            ChatFrame_AddMessageEventFilter(e, isOurNotice)
+        end
+    end
+    C_Timer.After(JOIN_DELAY, joinChannel)
     if ticker then ticker:Cancel() end
     ticker = C_Timer.NewTicker(SEND_INTERVAL, flush)
 end

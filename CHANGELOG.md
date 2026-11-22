@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.18.0 (2026-11-22)
+
+- Realm-wide source sharing: GearGuide users on the same realm now share the item sources they find (which creature, quest or vendor gives an item) even without being in the same guild or group, through a hidden chat channel. Nothing shows in chat. Only the item, the source's name and the zone are sent, never your inventory, gear, level, gold or name. GearGuide tells you once in chat; the Sharing button (or /gg sharing off) turns it off and leaves the channel.
+- Releases only add a shared source after three players reported it (was two).
+
+## 0.17.3 (2026-11-21)
+
+- Reputation gear: items that need a reputation ("Requires Honored with Timbermaw Hold") say so in the item details, with your standing and how much reputation is still to go, and item tooltips show "2,400 reputation to Honored with ..." until you reach it (179 items, from the cmangos item data).
+- Upgrades on level up: when you level up, GearGuide lists in chat the gear in your bags and bank that you can wear now and that beats what you have on. The bank is remembered each time you open it. Can be turned off in Settings > General > In the game.
+- Import Pawn scales: Settings > Stat Weights > "Import Pawn scale..." takes a Pawn scale string and uses it as your custom stat weights. Rating stats (CritRating, HitRating...) are converted to GearGuide's per 1% values; stats GearGuide doesn't score are listed.
+- New window header: the GearGuide logo and a gold GEARGUIDE wordmark in spaced capitals, then your class (in its class color), spec and role on one line ("Rogue Assassination ◆ Melee DPS"). The level range is no longer shown there. On a narrow window the spec name is shortened and the role left out.
+- Tabs: the tab names are bold, and the Settings tab sits on the right side of the window, apart from the gear tabs.
+- Settings > General > Appearance: pick your own colors with the game's color picker (accent, background, title bar, text, dim text, border). Each one replaces only that color of the chosen theme and stays when you switch themes; "Theme" next to it, or "Use the theme's colors", goes back. The window border has a size setting (1 to 6) and its own color, next to the style (solid line, tooltip, dialog or none). Your old thin/thick border and accent color carry over.
+- Settings > General > Appearance: colorblind-friendly upgrade colors (blue for better, orange for worse, instead of green and red) and a text size setting (85% to 125%).
+- Scroll bars can be clicked and dragged: dropdown menus, the item details, the settings pages and the mini tracker. Clicking the bar jumps there; the bar widens while the mouse is over it.
+- Item sources updated from QuestieDB 1.1.3: 402 new sources.
+- Smaller database in memory: map locations and random bonus tables are stored packed and unpacked only when a map or item details open (about 1.4 MB less).
+
+## 0.17.2 (2026-11-20)
+
+- Gear browser dungeon menu: all nine of WoW Forever's new dungeons are listed (The Hall of Thanes, Ruins of Lordaeron, Excavation Site: Wetlands, City of Dalaran, The Drowned City, Krol'dok Stronghold, Alcaz Prison, Blackmaw Hold, Shaper's Terrace), sorted by level among the others. Those whose loot isn't known yet show their level range, and what you loot inside them is recorded and listed there. Any other dungeon you loot in joins the menu too. World drops that a dungeon's creatures also carry (random greens, Black Malice, Ragehammer...) are no longer listed as that dungeon's loot.
+- BoE world drops: every creature that can drop one now shows it on its tooltip (about 2,700 items from 3,600 creatures, from the cmangos loot tables), listed after the creature's own loot. An item's sources show one "World drop: any of N creatures (level X-Y)" line instead of a list cut off at 25, and about 1,000 world drops that had no known source before can now be recommended. Looting one from any of its creatures no longer announces a "new drop location". The mini tracker's zone list includes them too ("World drop", listed with random chest loot after the zone's own sources) when creatures of the zone can drop them.
+- Settings > General > Creature tooltips: turn the drop list on or off, choose which drops it shows (upgrades and favorites, gear your class can use, or all gear), the lowest quality, the item level bracket (your recommendation range, any level, or 1-10 to 51-60), and whether BoE world drops are included. Favorites always show. World drops get their own "BoE world drops" header with their shared chance shown once.
+- Gear browser zone filter: pick any outdoor zone of the world map (WoW Forever's new zones included, grouped by continent, with their levels) to list the gear its creatures and chests drop, its vendors sell and its quests reward, at every level. Dungeons and raids stay in the dungeon menu; rare world drops are left out. A zone only known from loot joins the list under "Other".
+- Settings > General > Appearance: a color theme (Copper, Slate blue, Forest green, Crimson, Violet, Graphite and gold), your own accent color from the game's color picker, and the window border (thin line, thick line, none, tooltip or dialog border) for the main window and the mini tracker.
+
 ## 0.17.1 (2026-11-18)
 
 - Share builds: "Share this set..." in the Build menu gives a short text to copy and send; "Import a build..." takes one and saves it as a new build.

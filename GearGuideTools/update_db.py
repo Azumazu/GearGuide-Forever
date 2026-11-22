@@ -451,6 +451,57 @@ def intern_sources(items: dict[int, dict]) -> tuple[list[dict], list[list]]:
     return pool, locs
 
 
+# Map coordinates and random-variant groups are written as packed strings ("48.2,42.9,..."): the
+# game only reads them when a map or an item's details are opened (Core.lua ns.Numbers unpacks
+# them), and a string costs a few bytes per number where a Lua table costs 16 or more.
+def _pnum(v) -> str:
+    s = f"{v:.4f}".rstrip("0").rstrip(".") if isinstance(v, float) else str(v)
+    return s or "0"
+
+
+def pack_numbers(values: list) -> str:
+    return ",".join(_pnum(v) for v in values)
+
+
+def unpack_numbers(text) -> list:
+    if not isinstance(text, str):
+        return text
+    return [float(x) if "." in x else int(x) for x in text.split(",") if x]
+
+
+def pack_loc(loc: list) -> list:
+    """A location (list of {m, e, p, r, a} entries) with its points, routes and areas packed."""
+    out = []
+    for entry in loc or []:
+        if not isinstance(entry, dict):
+            out.append(entry)
+            continue
+        e = dict(entry)
+        if isinstance(e.get("p"), list):
+            e["p"] = pack_numbers(e["p"])
+        for k in ("r", "a"):  # lists of flat x, y lists, ";" between them
+            if isinstance(e.get(k), list):
+                e[k] = ";".join(pack_numbers(part) for part in e[k])
+        out.append(e)
+    return out
+
+
+def unpack_loc(loc: list) -> list:
+    out = []
+    for entry in loc or []:
+        if not isinstance(entry, dict):
+            out.append(entry)
+            continue
+        e = dict(entry)
+        if isinstance(e.get("p"), str):
+            e["p"] = unpack_numbers(e["p"])
+        for k in ("r", "a"):
+            if isinstance(e.get(k), str):
+                e[k] = [unpack_numbers(part) for part in e[k].split(";") if part]
+        out.append(e)
+    return out
+
+
 def write_lua(out: Path, items: dict[int, dict], meta: dict, header: list[str] | None = None,
               randoms: dict[int, list] | None = None) -> None:
     """randoms: {group: [suffix id, chance, ...]} for items with random variants (item.rg = group)."""
@@ -462,7 +513,7 @@ def write_lua(out: Path, items: dict[int, dict], meta: dict, header: list[str] |
         f"GearGuide_Data = {{ meta = {lua_val(meta)}, items = {{}}, sources = {{}}, locs = {{}}, randoms = {{}} }}",
         "local L = GearGuide_Data.locs",
     ]
-    lines += [f"L[{i}]={lua_val(loc)}" for i, loc in enumerate(locs, 1)]
+    lines += [f"L[{i}]={lua_val(pack_loc(loc))}" for i, loc in enumerate(locs, 1)]
     lines.append("local S = GearGuide_Data.sources")
     lines += [f"S[{i}]={lua_val(s)}" for i, s in enumerate(pool, 1)]
     for rec in items.values():
@@ -471,7 +522,7 @@ def write_lua(out: Path, items: dict[int, dict], meta: dict, header: list[str] |
     used = {rec.get("rg") for rec in items.values()}
     if randoms:
         lines.append("local R = GearGuide_Data.randoms")
-        lines += [f"R[{g}]={lua_val(randoms[g])}" for g in sorted(randoms) if g in used]
+        lines += [f"R[{g}]={lua_val(pack_numbers(randoms[g]))}" for g in sorted(randoms) if g in used]
     lines.append("local I = GearGuide_Data.items")
     lines += [f"I[{iid}]={lua_val(items[iid])}" for iid in sorted(items)]
     out.parent.mkdir(parents=True, exist_ok=True)

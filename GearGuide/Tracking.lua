@@ -95,6 +95,7 @@ function ns:ScanAcquired(quiet)
         countContainer(BANK_CONTAINER or -1)
         local numBankBags = NUM_BANKBAGSLOTS or 6
         for bag = numBags + 1, numBags + numBankBags do countContainer(bag) end
+        ns:RememberBankGear()
     end
 
     local changed, gained = false, {}
@@ -110,6 +111,71 @@ function ns:ScanAcquired(quiet)
     if changed then self:RequestRefresh() end
     return changed
 end
+
+---------------------------------------------------------------------------
+-- Upgrades on level up: gear in your bags or bank that you couldn't wear yet and now can, and
+-- that beats what you wear. The bank is only readable while it's open, so the gear in it is
+-- remembered then (GearGuideCharDB.bankGear = { link, ... }).
+---------------------------------------------------------------------------
+local function containerLinks(bag, out)
+    local n = getNumSlots and getNumSlots(bag) or 0
+    for slot = 1, n do
+        local link = getContainerItemLink and getContainerItemLink(bag, slot)
+        local id = link and ns.LinkToId(link)
+        if id and isGear(id) then out[#out + 1] = link end
+    end
+end
+
+function ns:RememberBankGear()
+    if not (bankOpen and GearGuideCharDB) then return end
+    local links = {}
+    containerLinks(BANK_CONTAINER or -1, links)
+    local numBags = NUM_BAG_SLOTS or 4
+    for bag = numBags + 1, numBags + (NUM_BANKBAGSLOTS or 6) do containerLinks(bag, links) end
+    GearGuideCharDB.bankGear = links
+end
+
+-- { { link, gain, bank = true/nil }, ... } best first: items needing a level above fromLevel and at
+-- most toLevel that are upgrades now.
+function ns:LevelUpUpgrades(fromLevel, toLevel)
+    local candidates, seen, out = {}, {}, {}
+    local bagLinks = {}
+    for bag = 0, NUM_BAG_SLOTS or 4 do containerLinks(bag, bagLinks) end
+    for _, link in ipairs(bagLinks) do candidates[#candidates + 1] = { link = link } end
+    for _, link in ipairs(GearGuideCharDB and GearGuideCharDB.bankGear or {}) do
+        candidates[#candidates + 1] = { link = link, bank = true }
+    end
+    for _, c in ipairs(candidates) do
+        local item = not seen[c.link] and ns.Party and ns.Party.ItemFor(c.link)
+        seen[c.link] = true
+        local rl = item and (item.rl or 0) or 0
+        if item and rl > fromLevel and rl <= toLevel then
+            local gain = ns.Badges and ns.Badges.GainFor(c.link)
+            if gain and gain > 0 then c.gain = gain; out[#out + 1] = c end
+        end
+    end
+    table.sort(out, function(a, b) return a.gain > b.gain end)
+    return out
+end
+
+local lastLevel
+local function announceLevelUp(level)
+    local from = lastLevel or (level - 1)
+    lastLevel = level
+    if not (GearGuideDB and GearGuideDB.levelUpGear ~= false) or level <= from then return end
+    local list = ns:LevelUpUpgrades(from, level)
+    if #list == 0 then return end
+    ns.Print(string.format("Level %d: %d upgrade%s you can wear now:", level, #list, #list == 1 and "" or "s"))
+    for i, u in ipairs(list) do
+        if i > 8 then ns.Print(string.format("  ...and %d more", #list - 8)) break end
+        print(string.format("  %s %s+%.1f|r%s", u.link, ns.Skin:Hex("upgrade"), u.gain, u.bank and " |cff999999(in your bank)|r" or ""))
+    end
+    if UIErrorsFrame and UIErrorsFrame.AddMessage then
+        UIErrorsFrame:AddMessage(string.format("GearGuide: %d upgrade%s you can wear now (see chat)",
+            #list, #list == 1 and "" or "s"), 0.4, 1, 0.6)
+    end
+end
+ns.AnnounceLevelUp = announceLevelUp  -- (tests)
 
 local scanPending = false
 local function scheduleScan(delay)
@@ -131,8 +197,14 @@ local function safeRegister(event)
     return (pcall(frame.RegisterEvent, frame, event))
 end
 
-frame:SetScript("OnEvent", function(_, event)
-    if event == "BAG_UPDATE_DELAYED" then
+frame:SetScript("OnEvent", function(_, event, arg1)
+    if event == "PLAYER_LEVEL_UP" then
+        -- After the client's level and the upgrade numbers have caught up (Badges: 0.5 s).
+        local level = tonumber(ns.Plain(arg1))
+        if level and C_Timer and C_Timer.After then
+            C_Timer.After(1, function() pcall(announceLevelUp, level) end)
+        end
+    elseif event == "BAG_UPDATE_DELAYED" then
         if not hasBagUpdateDelayed then
             -- The client has the batched event; stop listening to per-bag spam.
             hasBagUpdateDelayed = true
@@ -156,6 +228,8 @@ end)
 function ns:StartTracking()
     if self.trackingStarted then return end
     self.trackingStarted = true
+    lastLevel = ns.Plain(UnitLevel("player"))
+    safeRegister("PLAYER_LEVEL_UP")
     safeRegister("BAG_UPDATE")
     safeRegister("BAG_UPDATE_DELAYED")
     safeRegister("PLAYER_EQUIPMENT_CHANGED")

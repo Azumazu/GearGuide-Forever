@@ -65,6 +65,8 @@ end
 
 -- Does the item's source list (as the player sees it) already name this creature?
 function ns:ListsDropper(id, name)
+    local world = self:WorldDropsOf(name)  -- a world drop's creatures share one source line
+    if world and world[id] then return true end
     for _, s in ipairs(self:GetSources(id)) do
         if s.t == "drop" and s.n == name then return true end
     end
@@ -243,8 +245,24 @@ function ns:ToggleLootTrace()
     ns.Print("Loot trace " .. (self.lootTrace and "on: loot something, the details print here." or "off."))
 end
 
+-- Looting inside a dungeon or raid marks its zone as an instance, so the Gear Browser's dungeon
+-- menu lists dungeons the shipped data doesn't know yet (with what was looted there).
+local function rememberInstanceZone(z)
+    if z == "" or not IsInInstance then return end
+    local inside, kind = IsInInstance()
+    inside, kind = Plain(inside), Plain(kind)
+    if not inside or (kind ~= "party" and kind ~= "raid") then return end
+    GearGuideLearned.instanceZones = GearGuideLearned.instanceZones or {}
+    if GearGuideLearned.instanceZones[z] ~= kind then
+        GearGuideLearned.instanceZones[z] = kind
+        ns.instanceIndex, ns.zoneIndex = nil, nil
+    end
+end
+ns.RememberInstanceZone = rememberInstanceZone  -- (tests)
+
 local function onLootOpened(event)
     local z = zone()
+    rememberInstanceZone(z)
     local spotted = {}
     local n = GetNumLootItems()
     if ns.lootTrace then ns.Print(string.format("%s: %s slot(s)", event or "loot", show(n))) end

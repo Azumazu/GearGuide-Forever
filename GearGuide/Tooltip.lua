@@ -116,6 +116,9 @@ function ns:ShowItemTooltip(owner, id, info)
         tip:AddLine(string.format("Partially acquired (%d/%d)", have, need), 1, 0.7, 0.2)
     end
 
+    local repProgress = self.ReputationProgressText and self:ReputationProgressText(id)
+    if repProgress then tip:AddLine(repProgress, 1, 0.7, 0.2) end
+
     local variants = #self:GetVariants(id)
     if variants > 0 then
         tip:AddLine(string.format("Drops with a random bonus (%d variant%s, listed in the GearGuide window)",
@@ -196,19 +199,35 @@ local function addGainLine(tip, link)
     local gain = link and ns.Badges.GainFor(link)
     if not gain then return false end
     local text = ns.Badges.formatGain(gain)
+    local c = ns.Skin:Color(gain > 0 and "upgrade" or "downgrade")  -- colorblind setting: blue/orange
     if gain > 0 then
-        tip:AddLine("GearGuide: " .. text .. " over what you wear", 0.33, 0.85, 0.42)
+        tip:AddLine("GearGuide: " .. text .. " over what you wear", c[1], c[2], c[3])
     else
-        tip:AddLine("GearGuide: " .. text .. " compared to what you wear", 0.92, 0.36, 0.32)
+        tip:AddLine("GearGuide: " .. text .. " compared to what you wear", c[1], c[2], c[3])
     end
     return true
 end
 ns.AddGainTooltipLine = addGainLine  -- (tests)
 
+-- Reputation still needed for an item that requires it ("2,400 reputation to Honored with ...").
+local function addReputationLine(tip, link)
+    link = ns.Plain(link)
+    if not link then
+        local ok, _, l = pcall(tip.GetItem, tip)
+        link = ok and ns.Plain(l) or nil
+    end
+    local text = link and ns:ReputationProgressText(ns.LinkToId(link))
+    if not text then return false end
+    tip:AddLine("GearGuide: " .. text, 1, 0.7, 0.2)
+    return true
+end
+ns.AddReputationTooltipLine = addReputationLine  -- (tests)
+
 if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType
     and Enum.TooltipDataType.Item then
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tip, data)
         pcall(addGainLine, tip, data and data.hyperlink)
+        pcall(addReputationLine, tip, data and data.hyperlink)
         pcall(addVariantLines, tip, data and data.hyperlink)
     end)
 else
@@ -216,8 +235,9 @@ else
         if t and t.HookScript then
             t:HookScript("OnTooltipSetItem", function(tip)
                 local ok1, gainAdded = pcall(addGainLine, tip)
+                local ok3, repAdded = pcall(addReputationLine, tip)
                 local ok2, added = pcall(addVariantLines, tip)
-                if (ok1 and gainAdded) or (ok2 and added) then tip:Show() end
+                if (ok1 and gainAdded) or (ok2 and added) or (ok3 and repAdded) then tip:Show() end
             end)
         end
     end

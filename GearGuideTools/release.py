@@ -55,7 +55,8 @@ def read_shipped(path: Path) -> tuple[dict[int, dict], dict]:
         if not lm:
             continue
         tables[lm.group(1)][int(lm.group(2))] = LuaTableParser(lm.group(3)).value()
-    pool, items, locs = tables["S"], tables["I"], tables["L"]
+    from update_db import unpack_loc
+    pool, items, locs = tables["S"], tables["I"], {i: unpack_loc(l) for i, l in tables["L"].items()}
     for rec in items.values():  # indices -> sources, location index -> location (format 3)
         if isinstance(rec.get("src"), list):
             resolved = []
@@ -87,7 +88,8 @@ def read_randoms(path: Path) -> dict[int, list]:
     for line in path.read_text(encoding="utf-8").splitlines():
         m = re.match(r"^R\[(\d+)\]=(.*)$", line)
         if m:
-            out[int(m.group(1))] = LuaTableParser(m.group(2)).value()
+            from update_db import unpack_numbers
+            out[int(m.group(1))] = unpack_numbers(LuaTableParser(m.group(2)).value())  # packed "id,chance,..."
     return out
 
 
@@ -229,10 +231,14 @@ def main() -> int:
         from import_cmangos import CREDITS as CM_CREDITS, merge_prices, vendor_data
         priced = merge_prices(items, *vendor_data(args.cmangos))
         print(f"cmangos vendor prices: {priced} items")
+        from import_cmangos import merge_reputation, reputation_data
+        print(f"cmangos reputation requirements: {merge_reputation(items, reputation_data(args.cmangos))} items")
         meta["credits"] = "; ".join(c for c in (meta.get("credits"), CM_CREDITS) if c)
     else:
         for iid, rec in items.items():
             old_rec = old.get(iid) or {}
+            if old_rec.get("rp"):
+                rec["rp"] = old_rec["rp"]
             if old_rec.get("bp") and any(isinstance(s, dict) and s.get("t") == "vendor" for s in rec.get("src") or []):
                 rec["bp"] = old_rec["bp"]
             if old_rec.get("hr"):
@@ -266,8 +272,9 @@ def main() -> int:
         return 1
 
     added, removed, changed, new_sources, sources_changed = diff(old, items)
-    new_prices = sum(1 for i, r in items.items()
-                     if (r.get("bp"), r.get("hr")) != ((old.get(i) or {}).get("bp"), (old.get(i) or {}).get("hr")))
+    new_prices = sum(1 for i, r in items.items()  # gold price, PvP rank or reputation needed
+                     if (r.get("bp"), r.get("hr"), r.get("rp"))
+                     != ((old.get(i) or {}).get("bp"), (old.get(i) or {}).get("hr"), (old.get(i) or {}).get("rp")))
     questie_before, questie_now = old_meta.get("questie"), meta.get("questie")
     questie_updated = bool(questie_now) and questie_before != questie_now
     print(f"Shipped database: {len(old)} items (client build {old_meta.get('build', '?')})")
@@ -302,6 +309,11 @@ def main() -> int:
 
     meta["version"] = version
     write_lua(DATA, items, meta, header=HEADER, randoms=randoms)
+    if args.cmangos:  # BoE world drops and their creatures (else the shipped WorldDrops.lua stays)
+        import world_drops
+        world = world_drops.build(args.cmangos, set(items), questie)
+        world_drops.write_lua(world, ADDON / "WorldDrops.lua")
+        print(f"World drops: {len(world['items'])} items from {len(world['npc'])} creatures")
     if version == current:
         # --bump none: the released version's changelog and zip stay as they are.
         print(f"\nData.lua rebuilt (version {version} unchanged): no changelog entry or zip written.")

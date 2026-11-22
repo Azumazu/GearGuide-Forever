@@ -26,7 +26,7 @@ from update_db import apply_corrections, hide_by_source, write_lua, CORRECTIONS 
 
 DEFAULT_OUT = HERE.parent / "GearGuide" / "Data.lua"
 MAX_LEVEL = 60
-MIN_SHARED_REPORTS = 2  # sources from other players need this many independent reports to ship
+MIN_SHARED_REPORTS = 3  # sources from other players need this many independent reports to ship
 JUNK_NAMES = {"", "?", "Unknown", "Container"}  # learned before the client knew the name / opened containers
 
 
@@ -321,7 +321,7 @@ def collect(saved: Path, corrections: Path = CORRECTIONS, include_learned: bool 
                 priced += 1
         if priced:
             print(f"Vendor prices: {priced} items")
-        # Sources heard from other GearGuide users: only those reported by 2+ different players ship.
+        # Sources heard from other GearGuide users: only those reported by MIN_SHARED_REPORTS+ players ship.
         trusted = 0
         for iid, srcs in as_dict(learned.get("shared")).items():
             if int(iid) not in items or not isinstance(srcs, list):
@@ -333,7 +333,7 @@ def collect(saved: Path, corrections: Path = CORRECTIONS, include_learned: bool 
                     have.append({**{k: s[k] for k in ("t", "n", "z") if s.get(k) is not None}, "seen": True})
                     trusted += 1
         if trusted:
-            print(f"Shared sources from players (reported 2+ times): {trusted}")
+            print(f"Shared sources from players (reported {MIN_SHARED_REPORTS}+ times): {trusted}")
     credits = None
     if questie:
         from import_questie import merge_sources, questie_version

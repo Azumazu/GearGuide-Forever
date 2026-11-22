@@ -87,7 +87,7 @@ end
 local SOURCE_PREFIX = { vendor = "Vendor: ", quest = "Quest: ", craft = "Crafted: " }
 local function zoneSourceText(src)
     if type(src) ~= "table" then return "" end
-    local text = (SOURCE_PREFIX[src.t] or "") .. (src.n or "?")
+    local text = src.t == "world" and "World drop" or ((SOURCE_PREFIX[src.t] or "") .. (src.n or "?"))
     if src.dc then text = text .. " " .. ns.FormatChance(src.dc) end
     return text
 end
@@ -334,8 +334,8 @@ local function createFrame()
 
     -- Header: drag handle + controls
     local header = CreateFrame("Frame", nil, f)
-    header:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
-    header:SetPoint("TOPRIGHT", f, "TOPRIGHT", -1, -1)
+    f.header = header
+    ns.Skin:PlaceHeader(f)  -- inside the window border
     header:SetHeight(HEADER_H)
     header:EnableMouse(true)
     header:RegisterForDrag("LeftButton")
@@ -422,6 +422,21 @@ local function createFrame()
     thumb:SetWidth(2)
     thumb:SetColorTexture(color("accent"))
     f.thumb = thumb
+    -- Click or drag the scroll bar (f.visibleRows: rows shown, set by updateScrollbar).
+    local grip = ns.Skin:ScrollGrip(f, thumb, {
+        idle = "accent",
+        get = function()
+            local most = #list - (f.visibleRows or 0)
+            return most > 0 and offset / most or 0
+        end,
+        set = function(fr)
+            local target = math.floor(fr * math.max(0, #list - (f.visibleRows or 0)) + 0.5)
+            if target ~= offset then ns:ScrollMini(target - offset) end
+        end,
+        wheel = function(delta) ns:ScrollMini(-delta) end,
+    })
+    grip:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -(HEADER_H + PAD))
+    f.grip = grip
 
     f:SetScript("OnUpdate", function(_, dt) updateChrome(dt) end)
     f:SetScale(miniScale())  -- before positioning: the saved offsets are in the frame's scaled units
@@ -433,17 +448,19 @@ end
 -- Positions the scroll thumb for `visible` rows out of #list; hidden when everything fits.
 local function updateScrollbar(visible)
     local total = #list
+    frame.visibleRows = visible
     if total <= visible or visible == 0 then
-        frame.track:Hide(); frame.thumb:Hide()
+        frame.track:Hide(); frame.thumb:Hide(); frame.grip:Sync()
         return
     end
     local trackH = visible * PITCH - ROW_GAP
+    frame.grip:SetHeight(trackH)
     local thumbH = math.max(8, trackH * visible / total)
     local y = (trackH - thumbH) * offset / (total - visible)
     frame.thumb:SetHeight(thumbH)
     frame.thumb:ClearAllPoints()
     frame.thumb:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -1, -(HEADER_H + PAD) - y)
-    frame.track:Show(); frame.thumb:Show()
+    frame.track:Show(); frame.thumb:Show(); frame.grip:Sync()
 end
 
 local function emptyMessage()

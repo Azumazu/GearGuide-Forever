@@ -107,6 +107,7 @@ function ns:GetZonePicks(n)
     local zoneName, mapID, inInstance = self:CurrentZone()
     local class = self:GetPlayerClass()
     local candidates, seen = {}, {}
+    local worldHere = self:WorldDropsInZone(zoneName)
     local function consider(p)
         if seen[p.id] or self:GetCompletion(p.id, class) == "done" then return end
         seen[p.id] = true
@@ -121,6 +122,16 @@ function ns:GetZonePicks(n)
             end
         end
         p.zoneSource = p.zoneSource or chest
+        if not p.zoneSource then
+            -- A BoE world drop creatures here can drop. Rare like random chest loot, so listed
+            -- with it after the zone's own sources.
+            local w = worldHere[p.id]
+            if w then
+                chest = { t = "world", n = string.format("any of %d creature%s here, each", w[2], w[2] == 1 and "" or "s"),
+                          dc = w[1], k = "boe" }
+                p.zoneSource = chest
+            end
+        end
         if p.zoneSource then
             p.chestOnly = p.zoneSource == chest
             p.favorite = self:IsFavorite(p.id)

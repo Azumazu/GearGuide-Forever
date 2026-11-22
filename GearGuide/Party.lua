@@ -220,7 +220,7 @@ local function labelRoll(rollID, a)
     end
     local text
     if a.me and a.me > 0.05 then
-        text = "|cff33ff99GearGuide:|r upgrade for you " .. "|cff55dd66" .. gainText(a.me) .. "|r"
+        text = "|cff33ff99GearGuide:|r upgrade for you " .. ns.Skin:Hex("upgrade") .. gainText(a.me) .. "|r"
     elseif a.me then
         text = "|cff33ff99GearGuide:|r |cff999999not an upgrade for you|r"
     else

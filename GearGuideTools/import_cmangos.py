@@ -101,6 +101,31 @@ def vendor_data(path: Path) -> tuple[dict[int, int], dict[int, int]]:
     return prices, ranks
 
 
+def reputation_data(path: Path) -> dict[int, list[int]]:
+    """{item id: [faction id, standing]} for items that need a reputation (to buy or use: "Requires
+    Honored with Timbermaw Hold"). standing is the game's standingID: 4 Neutral, 5 Friendly, 6 Honored,
+    7 Revered, 8 Exalted (cmangos stores the rank 0-based, one lower)."""
+    t = read_tables(path, {"item_template"})
+    out = {}
+    for r in t["item_template"]:
+        faction, rank = r.get("RequiredReputationFaction"), r.get("RequiredReputationRank")
+        if isinstance(faction, int) and faction > 0 and isinstance(rank, int) and rank >= 0:
+            out[r["entry"]] = [faction, rank + 1]
+    return out
+
+
+def merge_reputation(items: dict[int, dict], reps: dict[int, list[int]]) -> int:
+    """Sets item["rp"] = [faction, standing] on items that need a reputation; returns how many."""
+    n = 0
+    for iid, rec in items.items():
+        if iid in reps:
+            rec["rp"] = reps[iid]
+            n += 1
+        else:
+            rec.pop("rp", None)
+    return n
+
+
 def buy_prices(path: Path) -> dict[int, int]:
     """{item id: buy price in copper} for items a vendor sells and that cost gold."""
     return vendor_data(path)[0]

@@ -77,7 +77,7 @@ local state = {
     resetScroll = false,
     flashId = nil, flashUntil = 0,
     filter = {
-        text = "", class = nil, spec = nil, slot = 0, minL = nil, maxL = nil, instance = 0,
+        text = "", class = nil, spec = nil, slot = 0, minL = nil, maxL = nil, instance = 0, zone = 0,
         quality = 3, sort = 1, usable = true, hideDone = false, favOnly = false,  -- 3 = Uncommon+
     },
 }
@@ -630,6 +630,9 @@ local function buildBrowserRows()
     -- One dungeon or raid: its loot at every level (the instance sets the range).
     local inInstance = f.instance ~= 0 and ns:InstanceItems(f.instance) or nil
     local zone = inInstance and ns.ZoneName(f.instance) or nil
+    -- One outdoor zone: what drops, is sold or rewarded there, at every level.
+    local zoneInfo = f.zone ~= 0 and ns:ZoneIndex().byKey[f.zone] or nil
+    if zoneInfo then inInstance, zone = zoneInfo.items, zoneInfo.name end
     if inInstance then minL, maxL = nil, nil end
 
     local rows = {}
@@ -674,6 +677,15 @@ local function buildBrowserRows()
         emptyDatabaseNote(rows)
         if #rows == 0 and f.favOnly and #ids == 0 then
             rows[1] = { kind = "note", text = "No favorites yet: click the star on a row, or Alt-click it." }
+        elseif #rows == 0 and zoneInfo and next(inInstance) == nil then
+            rows[1] = { kind = "note", text = "Nothing is known to drop, be sold or be rewarded in " .. zone
+                .. " yet. What you loot there is recorded and listed here." }
+        elseif #rows == 0 and zoneInfo then
+            rows[1] = { kind = "note", text = "No gear from " .. zone
+                .. " matches these filters (class, slot, quality, Usable only)." }
+        elseif #rows == 0 and inInstance and next(inInstance) == nil then
+            rows[1] = { kind = "note", text = (zone or "This dungeon") .. " is new in WoW: Forever and its loot "
+                .. "isn't known yet. What you loot inside it is recorded and listed here." }
         elseif #rows == 0 and inInstance then
             rows[1] = { kind = "note", text = "No loot from " .. (zone or "this instance")
                 .. " matches these filters (class, slot, quality, Usable only)." }
@@ -700,7 +712,7 @@ local function bodyAdd(text, size, colorKey, gap, indent)
         bodyLines[bodyCount] = fs
     end
     local font, _, flags = fs:GetFont()
-    fs:SetFont(font or ns.Skin.FONT, size or ns.Skin.SIZE.small, flags or "")
+    fs:SetFont(font or ns.Skin.FONT, ns.Skin.FontSize(size or ns.Skin.SIZE.small), flags or "")
     fs:SetTextColor(rgba(colorKey or "text"))
     indent = indent or 0
     bodyY = bodyY + (gap or 0)
@@ -717,13 +729,14 @@ local function updateBodyBar()
     local sfH, ch = sf:GetHeight() or 0, child:GetHeight() or 0
     local maxScroll = math.max(0, ch - sfH)
     if sf:GetVerticalScroll() > maxScroll then sf:SetVerticalScroll(maxScroll) end
-    if maxScroll < 1 or sfH <= 0 then bar:Hide() return end
+    if maxScroll < 1 or sfH <= 0 then bar:Hide(); W.bodyGrip:Sync() return end
     local thumbH = math.max(16, sfH * sfH / ch)
     local off = sf:GetVerticalScroll() / maxScroll * (sfH - thumbH)
     bar:ClearAllPoints()
     bar:SetPoint("TOPLEFT", sf, "TOPRIGHT", 4, -off)
-    bar:SetSize(2, thumbH)
+    bar:SetHeight(thumbH)  -- width: the grip's (wider while hovered)
     bar:Show()
+    W.bodyGrip:Sync()
 end
 
 -- Clickable source lines: an invisible button over each source line that has a map location.
@@ -861,6 +874,8 @@ function updateDetail()
         or "No level requirement"
     if item.il and item.il > 0 then lvl = lvl .. ns.Skin:Hex("textDim") .. DOT .. "item level " .. item.il .. "|r" end
     bodyAdd(lvl, small, "text", 2)
+    local repText, repMet = ns:ReputationText(id)
+    if repText then bodyAdd(repText, small, repMet and "done" or (repMet == false and "partial" or "text"), 2) end
 
     -- Completion
     local cState, have, need = ns:GetCompletion(id, class)
@@ -1099,7 +1114,7 @@ local function syncBrowserControls()
     W.search:SetText(f.text or "")
     W.minBox:SetText(f.minL and tostring(f.minL) or "")
     W.maxBox:SetText(f.maxL and tostring(f.maxL) or "")
-    W.classSel:Refresh(); W.specSel:Refresh(); W.slotSel:Refresh(); W.instSel:Refresh()
+    W.classSel:Refresh(); W.specSel:Refresh(); W.slotSel:Refresh(); W.instSel:Refresh(); W.zoneSel:Refresh()
     W.qualitySel:Refresh(); W.sortSel:Refresh()
     state.syncLevelGroup()
     W.usableCb:SetChecked(f.usable)
@@ -1189,15 +1204,49 @@ local function createBrowseBar(parent)
         end,
         getValue = function() return f.instance end,
         onSelect = function(v)
-            if type(v) ~= "number" or v == f.instance then return end
+            -- Area IDs, or zone names for dungeons only known from loot; "header:..." rows aren't picks.
+            if v == nil or v == f.instance or (type(v) == "string" and v:find("^header:")) then return end
             f.instance = v
+            if v ~= 0 then f.zone = 0; W.zoneSel:Refresh() end  -- one place at a time
             state.syncLevelGroup()
             filterChanged()
         end,
         maxVisible = 16,
         tooltip = { "Dungeon or raid", "Lists the loot of one dungeon or raid: what its bosses, trash and "
             .. "chests drop (rare world drops left out), at every level. The numbers are the usual "
-            .. "required levels of its loot. Class, slot, quality and Usable only still apply." },
+            .. "required levels of its loot (for a new dungeon whose loot isn't known yet, its level "
+            .. "range). Class, slot, quality and Usable only still apply." },
+    })
+
+    -- Outdoor zone: what drops, is sold or rewarded there. Zones grouped by continent.
+    W.zoneSel = Skin:Dropdown(bar, 150, {
+        getItems = function()
+            local out = { { value = 0, text = "Any zone" } }
+            local section
+            for _, z in ipairs(ns:ZoneIndex().list) do
+                if z.continent ~= section then
+                    section = z.continent
+                    out[#out + 1] = { value = "header:" .. section, text = section, header = true }
+                end
+                local note = z.levels and (z.levels[1] == z.levels[2] and tostring(z.levels[1])
+                    or (z.levels[1] .. DASH .. z.levels[2])) or nil
+                out[#out + 1] = { value = z.key, text = z.name, note = note }
+            end
+            return out
+        end,
+        getValue = function() return f.zone end,
+        onSelect = function(v)
+            if v == nil or v == f.zone or (type(v) == "string" and v:find("^header:")) then return end
+            f.zone = v
+            if v ~= 0 then f.instance = 0; W.instSel:Refresh() end  -- one place at a time
+            state.syncLevelGroup()
+            filterChanged()
+        end,
+        maxVisible = 16,
+        tooltip = { "Zone", "Lists the gear you can get in one outdoor zone: what its creatures and chests "
+            .. "drop (rare world drops left out), what its vendors sell and its quests reward, at every "
+            .. "level. Every zone of the world map is here, WoW: Forever's new ones too; dungeons and raids "
+            .. "are in the dungeon menu. Class, slot, quality and Usable only still apply." },
     })
 
     -- Level range group: "Level [min] – [max]"
@@ -1229,7 +1278,7 @@ local function createBrowseBar(parent)
     W.minBox, W.maxBox, W.lvlGroup = minBox, maxBox, lvl
     -- An instance sets its own levels: the range is dimmed (and ignored) while one is chosen.
     function state.syncLevelGroup()
-        local on = f.instance == 0
+        local on = f.instance == 0 and f.zone == 0
         lvl:SetAlpha(on and 1 or 0.4)
         minBox:EnableMouse(on); maxBox:EnableMouse(on)
         if not on then minBox:ClearFocus(); maxBox:ClearFocus() end
@@ -1275,7 +1324,7 @@ local function createBrowseBar(parent)
     -- All controls are 24px tall; yo centers the count text on the line.
     W.flow = {
         { f = search },
-        { f = W.classSel }, { f = W.specSel }, { f = W.slotSel }, { f = W.instSel },
+        { f = W.classSel }, { f = W.specSel }, { f = W.slotSel }, { f = W.instSel }, { f = W.zoneSel },
         { f = lvl },
         { f = W.qualitySel }, { f = W.sortSel },
         { f = W.usableCb }, { f = W.hideCb }, { f = W.favCb },
@@ -1293,19 +1342,42 @@ local function createRecBar(parent)
     return bar
 end
 
--- Window subtitle: "<Class> · <Spec> (<role>) · req. level X–Y" (same range as the recommendations).
+-- Header columns (CLASS | SPEC | ROLE): each as wide as its caption or value, left to right
+-- after the wordmark. When the window is too narrow for all of them before the Mini button,
+-- the spec name is shortened ("Assassin...") and the role column dropped.
+local function layoutHeader()
+    local parts = frame and frame.headerParts
+    if not parts then return end
+    local left, stop = parts[1]:GetLeft(), W.miniBtn and W.miniBtn:GetLeft()
+    local room = (left and stop and stop > left) and (stop - left - 12) or math.huge  -- not laid out yet: all
+    local x, full = 0, false
+    for _, part in ipairs(parts) do
+        x = x + part.gap
+        local w = math.ceil(part.val:GetStringWidth() or 0)
+        if not full and x + w <= room then
+            part:Show(); part:SetWidth(math.max(w, 1))
+        elseif not full and part.shrink and room - x >= 40 then
+            part:Show(); part:SetWidth(room - x)  -- text truncates with "..."
+            full = true
+        else
+            part:Hide(); full = true  -- the parts after it go too (they're chained)
+        end
+        x = x + w
+    end
+end
+
+-- Header text: the class (class color), the spec (Custom (...) with your own weights) and its role.
 local function updateSubtitle()
-    if not frame.subtitle then return end
+    local parts = frame and frame.headerParts
+    if not parts then return end
     local class = ns:GetPlayerClass()
     local spec = ns:GetSpecInfo(class, ns:GetPlayerSpec())
-    local level = UnitLevel("player")
-    local minL = math.max(1, level - (GearGuideDB.levelBehind or 5))
-    local maxL = level + (GearGuideDB.levelAhead or 3)
     local specText = spec and spec.label or "?"
     if ns:IsCustomWeights() then specText = "Custom (" .. specText .. ")" end
-    frame.subtitle:SetText(classLabel(class) .. DOT .. specText
-        .. " (" .. roleLabel(spec and spec.role) .. ")" .. DOT
-        .. string.format("req. level %d%s%d", minL, DASH, maxL))
+    parts[1].val:SetText(classLabel(class))
+    parts[2].val:SetText(specText)
+    parts[3].val:SetText(roleLabel(spec and spec.role))
+    layoutHeader()
 end
 
 ---------------------------------------------------------------------------
@@ -1483,8 +1555,19 @@ local function createDetail(content)
 
     local bar = detail:CreateTexture(nil, "ARTWORK")
     bar:SetColorTexture(rgba("thumb"))
+    bar:SetWidth(2)
     bar:Hide()
     W.bodyBar = bar
+    -- Click or drag the scroll bar.
+    local function bodyMax() return math.max(0, child:GetHeight() - sf:GetHeight()) end
+    local grip = Skin:ScrollGrip(detail, bar, {
+        get = function() local m = bodyMax() return m > 0 and sf:GetVerticalScroll() / m or 0 end,
+        set = function(f) sf:SetVerticalScroll(f * bodyMax()); updateBodyBar() end,
+        wheel = function(delta) sf:GetScript("OnMouseWheel")(sf, delta) end,
+    })
+    grip:SetPoint("TOPLEFT", sf, "TOPRIGHT", 0, 0)
+    grip:SetPoint("BOTTOMLEFT", sf, "BOTTOMRIGHT", 0, 0)
+    W.bodyGrip = grip
 
     local empty = Skin:Text(detail, Skin.SIZE.normal, "textDim")
     empty:SetPoint("LEFT", 16, 0)
@@ -1617,7 +1700,58 @@ local function createWindow()
         GameTooltip:Show()
     end)
     W.miniBtn:SetScript("OnLeave", hideTooltip)
-    frame.subtitle:SetPoint("RIGHT", W.miniBtn, "LEFT", -10, -8)  -- truncates instead of overlapping
+    -- Header left: logo, GEARGUIDE in spaced capitals, a divider, then CLASS | SPEC | ROLE columns
+    -- (small dim captions over the values). Replaces the window's plain title and subtitle.
+    frame.title:Hide()
+    if frame.subtitle then frame.subtitle:Hide() end
+    if frame.titleMark then frame.titleMark:Hide() end
+    local logo = header:CreateTexture(nil, "ARTWORK")
+    logo:SetTexture("Interface\\AddOns\\GearGuide\\Media\\icon")
+    logo:SetSize(22, 22)
+    logo:SetPoint("LEFT", header, "LEFT", 10, 0)
+    frame.logo = logo
+    local wordmark = Skin:GradientWordmark(header, "GEARGUIDE", 13, 1.2)
+    wordmark:SetPoint("LEFT", logo, "RIGHT", 8, 0)
+    frame.wordmark = wordmark
+    local sep = header:CreateTexture(nil, "ARTWORK")
+    sep:SetColorTexture(Skin.C.edge[1], Skin.C.edge[2], Skin.C.edge[3], 1)
+    sep:SetSize(1, 16)
+    sep:SetPoint("LEFT", wordmark, "RIGHT", 10, 0)
+    Skin:Hairline(sep, "v")
+    -- One line: Rogue Assassination ◆ Melee DPS (class color / text / dim).
+    frame.headerParts = {}
+    local parts = {
+        { size = 13, color = "text", gap = 0 },
+        { size = 13, color = "text", gap = 4, shrink = true },
+        { size = 12, color = "textDim", gap = 18, diamond = true },
+    }
+    for i, spec in ipairs(parts) do
+        local part = CreateFrame("Frame", nil, header)
+        part:SetHeight(20)
+        part.val = Skin:Text(part, spec.size, spec.color)
+        part.val:SetPoint("LEFT", part, "LEFT", 0, 0)
+        part.val:SetPoint("RIGHT", part, "RIGHT", 0, 0)
+        part.val:SetWordWrap(false)
+        part.gap, part.shrink = spec.gap, spec.shrink
+        if i == 1 then
+            part:SetPoint("LEFT", sep, "RIGHT", 12, 0)
+        else
+            part:SetPoint("LEFT", frame.headerParts[i - 1], "RIGHT", spec.gap, 0)
+        end
+        if spec.diamond then
+            local d = header:CreateTexture(nil, "ARTWORK")
+            d:SetTexture("Interface\\AddOns\\GearGuide\\Media\\diamond")
+            d:SetVertexColor(Skin.C.edge[1], Skin.C.edge[2], Skin.C.edge[3], 1)
+            d:SetSize(7, 7)
+            d:SetPoint("CENTER", part, "LEFT", -spec.gap / 2, 0)
+            part.diamond = d
+            part:HookScript("OnShow", function(self) self.diamond:Show() end)
+            part:HookScript("OnHide", function(self) self.diamond:Hide() end)
+        end
+        frame.headerParts[i] = part
+    end
+    frame:HookScript("OnSizeChanged", layoutHeader)
+    frame:HookScript("OnShow", function() if C_Timer and C_Timer.After then C_Timer.After(0, layoutHeader) end end)
 
     local content = frame.content
 
@@ -1641,7 +1775,7 @@ local function createWindow()
     W.simTab:SetPoint("LEFT", W.browseTab, "RIGHT", 6, 0)
     W.simTab:SetScript("OnClick", function() setTab("simulator") end)
     W.settingsTab = Skin:Tab(strip, "Settings", 30)
-    W.settingsTab:SetPoint("LEFT", W.simTab, "RIGHT", 6, 0)
+    W.settingsTab:SetPoint("BOTTOMRIGHT", strip, "BOTTOMRIGHT", 0, 0)  -- apart from the gear tabs
     W.settingsTab:SetScript("OnClick", function() setTab("settings") end)
 
     -- Footer
@@ -1654,8 +1788,9 @@ local function createWindow()
         GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
         GameTooltip:AddLine("Source sharing")
         GameTooltip:AddLine("Shares item sources you discover (which creature, quest or vendor gives an item) "
-            .. "with GearGuide users in your guild and group, and receives theirs. Invisible, no chat messages, "
-            .. "no character data.", 1, 1, 1, true)
+            .. "with GearGuide users on your realm, in your guild and in your group, and receives theirs. "
+            .. "Invisible, no chat messages, no character data (never your inventory, gear, level or gold).",
+            1, 1, 1, true)
         GameTooltip:AddLine("Click to turn " .. (ns:IsSharingEnabled() and "off" or "on") .. ".", 0.4, 1, 0.6)
         GameTooltip:Show()
     end)
@@ -1752,6 +1887,7 @@ local function revealInBrowser(id, item)
     local key = ns.EQUIPLOC_GROUP[item.eq]
     if f.slot > 0 and ns.SLOT_GROUPS[f.slot].key ~= key then f.slot = 0 end
     if f.instance ~= 0 and not (ns:InstanceItems(f.instance) or {})[id] then f.instance = 0 end
+    if f.zone ~= 0 and not (ns:ZoneItems(f.zone) or {})[id] then f.zone = 0 end
     local eff = ns.EffectiveLevel(item)
     if f.minL and eff < f.minL then f.minL = eff end
     if f.maxL and eff > f.maxL then f.maxL = eff end

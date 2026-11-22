@@ -19,9 +19,15 @@ local defaults = {
     minQuality = 2,   -- lowest item quality recommended (2 = Uncommon)
     map = { routes = true, waypoint = false },  -- draw patrol routes; set a waypoint arrow (game / TomTom)
     creatureTips = true,  -- list the gear a creature drops on its tooltip
+    -- ...which gear (CreatureTips.lua): upgrades/usable/all, lowest quality, level bracket, BoE world drops
+    tipDrops = { show = "upgrades", minQuality = 2, bracket = "range", world = true },
     announceDrops = true, -- "New drop location discovered for [item]" when looting a new source
     -- "Gear Acquired" pop-up (Toast.lua): on/off, locked in place, width, scale; point = saved position
     toast = { shown = true, locked = false, w = 300, scale = 1 },
+    -- Appearance (Skin.lua): color theme, hand-picked colors over it (colors[key] = {r, g, b}), window
+    -- border style and size (borderSize nil = the style's own), blue/orange upgrade numbers, text size
+    skin = { theme = "copper", colors = {}, border = "solid", colorblind = false, textScale = 1 },
+    levelUpGear = true,   -- on level up, list bag/bank gear you can now wear that's an upgrade (Tracking.lua)
 }
 
 local function applyDefaults(dst, src)
@@ -58,6 +64,73 @@ end
 function ns.QualityHex(q)
     local c = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[q or 1]
     return (c and c.hex) or "|cffffffff"
+end
+
+---------------------------------------------------------------------------
+-- Reputation requirements (Data.lua item.rp = { faction id, standing }: "Requires Honored with
+-- Timbermaw Hold"). standing is the game's standingID: 4 Neutral ... 8 Exalted.
+---------------------------------------------------------------------------
+local STANDING_NAMES = { "Hated", "Hostile", "Unfriendly", "Neutral", "Friendly", "Honored", "Revered", "Exalted" }
+local STANDING_START = { -42000, -6000, -3000, 0, 3000, 9000, 21000, 42000 }  -- reputation where each begins
+
+function ns.StandingName(s)
+    return _G["FACTION_STANDING_LABEL" .. tostring(s)] or STANDING_NAMES[s] or ("standing " .. tostring(s))
+end
+
+local function thousands(n)
+    local s = tostring(math.floor(n + 0.5))
+    while true do
+        local t, k = s:gsub("^(-?%d+)(%d%d%d)", "%1,%2")
+        s = t
+        if k == 0 then return s end
+    end
+end
+
+-- The player's standing with a faction: name, standingID, reputation value (nil when unknown).
+function ns:FactionStanding(faction)
+    if C_Reputation and C_Reputation.GetFactionDataByID then
+        local ok, d = pcall(C_Reputation.GetFactionDataByID, faction)
+        if ok and type(d) == "table" and d.name then return d.name, d.reaction, d.currentStanding end
+    end
+    if GetFactionInfoByID then
+        local ok, name, _, standing, _, _, value = pcall(GetFactionInfoByID, faction)
+        if ok and name then return name, standing, value end
+    end
+end
+
+-- { faction, standing, name, have = your standing, met, toGo = reputation still needed } or nil.
+function ns:ReputationNeed(id)
+    local item = GearGuide_Data and GearGuide_Data.items and GearGuide_Data.items[id]
+    local rp = item and item.rp
+    if type(rp) ~= "table" or not rp[1] or not rp[2] then return nil end
+    local name, standing, value = self:FactionStanding(rp[1])
+    local need = { faction = rp[1], standing = rp[2], name = name, have = standing }
+    if standing then
+        need.met = standing >= rp[2]
+        if not need.met and value and STANDING_START[rp[2]] then need.toGo = math.max(0, STANDING_START[rp[2]] - value) end
+    end
+    return need
+end
+
+-- "Requires Honored with Timbermaw Hold (you: Friendly, 2,400 to go)", met (true/false/nil unknown).
+function ns:ReputationText(id)
+    local r = self:ReputationNeed(id)
+    if not r then return nil end
+    local text = "Requires " .. ns.StandingName(r.standing) .. (r.name and (" with " .. r.name) or " reputation")
+    if r.have and not r.met then
+        text = text .. " (you: " .. ns.StandingName(r.have) .. (r.toGo and (", " .. thousands(r.toGo) .. " to go") or "") .. ")"
+    end
+    return text, r.met
+end
+
+-- Only while not reached: "2,400 reputation to Honored with Timbermaw Hold" (item tooltips; the game
+-- itself already prints the requirement).
+function ns:ReputationProgressText(id)
+    local r = self:ReputationNeed(id)
+    if not (r and r.have and not r.met) then return nil end
+    local target = ns.StandingName(r.standing) .. (r.name and (" with " .. r.name) or "")
+    if r.toGo then return thousands(r.toGo) .. " reputation to " .. target end
+    return "You are " .. ns.StandingName(r.have) .. ", it needs " .. target
 end
 
 function ns.ItemIcon(id)
@@ -207,12 +280,38 @@ function ns.VariantLink(id, suffix)
     return "item:" .. id .. ":0:0:0:0:0:" .. suffix
 end
 
+-- Data.lua packs map coordinates and random-variant groups into strings ("48.2,42.9,..."; a Lua
+-- table would cost 16+ bytes per number for data that's only read when a map or item details
+-- open). ns.Numbers: such a string (or an already unpacked list) -> list of numbers.
+function ns.Numbers(v)
+    if type(v) ~= "string" then return v end
+    local out = {}
+    for n in v:gmatch("[^,]+") do out[#out + 1] = tonumber(n) end
+    return out
+end
+
+-- "x,y,x,y;x,y,..." (routes, area outlines) -> { {x, y, ...}, ... }; lists pass through.
+function ns.NumberLists(v)
+    if type(v) ~= "string" then return v end
+    local out = {}
+    for part in v:gmatch("[^;]+") do out[#out + 1] = ns.Numbers(part) end
+    return out
+end
+
+local randomGroups = {}  -- group -> unpacked { suffix, chance, ... }
+local function randomGroup(g)
+    local packed = g and GearGuide_Data.randoms and GearGuide_Data.randoms[g]
+    if packed == nil then return nil end
+    if not randomGroups[g] then randomGroups[g] = ns.Numbers(packed) end
+    return randomGroups[g]
+end
+
 -- { { p = suffix id, c = chance % (nil: only seen in game) }, ... }: the shipped group, most likely
--- first (Data.lua R[item.rg] = { suffix, chance, ... }), then suffixes players looted that it lacks.
+-- first (Data.lua R[item.rg] = "suffix,chance,..."), then suffixes players looted that it lacks.
 function ns:GetVariants(id)
     local out, seen = {}, {}
     local db = GearGuide_Data.items[id]
-    local group = db and db.rg and GearGuide_Data.randoms and GearGuide_Data.randoms[db.rg]
+    local group = db and randomGroup(db.rg)
     if group then
         for i = 1, #group - 1, 2 do
             out[#out + 1] = { p = group[i], c = group[i + 1] }
@@ -376,6 +475,84 @@ local function locForCreature(name, z)
     end
 end
 
+---------------------------------------------------------------------------
+-- World drops (WorldDrops.lua, from cmangos' shared loot tables): BoE gear that hundreds of
+-- creatures can drop. A creature links a few tables ("level 53-58 greens and blues") with its own
+-- chance; each table yields one of its items, all equally likely unless x overrides one.
+---------------------------------------------------------------------------
+
+-- creatures, lowest level, highest level, usual chance% per kill, best chance% (or nil)
+function ns:WorldDropInfo(id)
+    local w = GearGuide_WorldDrops and GearGuide_WorldDrops.items[id]
+    if w then return w[1], w[2], w[3], w[5] or w[4], w[4] end
+end
+
+-- { [itemID] = chance% } for one creature (by name), or nil. The last answer is kept: the same
+-- creature's tooltip is built many times while the mouse rests on it.
+local lastWorldName, lastWorldDrops
+function ns:WorldDropsOf(name)
+    if name == lastWorldName then return lastWorldDrops end
+    local wd = GearGuide_WorldDrops
+    local e = wd and name and wd.npc[name]
+    local out
+    if e then
+        out = {}
+        for i = 3, #e - 1, 2 do
+            local ref, pick = wd.refs[e[i]], e[i + 1]
+            if ref then
+                for j = 2, #ref do
+                    local id = ref[j]
+                    local pct = pick * ((ref.x and ref.x[id]) or ref[1]) / 100
+                    -- Linked through two tables: either one can drop it.
+                    out[id] = 100 * (1 - (1 - (out[id] or 0) / 100) * (1 - pct / 100))
+                end
+            end
+        end
+    end
+    lastWorldName, lastWorldDrops = name, out
+    return out
+end
+
+-- World drops of the creatures that spawn in a zone (by name, as ns.ZoneName gives it):
+-- { [itemID] = { usual chance% here, creatures here } }. The usual (median) chance, not the best:
+-- the best is a rare spawn's. Kept per zone.
+local worldByZone = {}
+function ns:WorldDropsInZone(zoneName)
+    local wd = GearGuide_WorldDrops
+    if not (wd and zoneName and zoneName ~= "") then return {} end
+    if worldByZone[zoneName] then return worldByZone[zoneName] end
+    local chances = {}  -- itemID -> { chance%, ... }
+    for name, e in pairs(wd.npc) do
+        local here = false
+        for _, area in ipairs(e.z or {}) do
+            if ns.ZoneName(area) == zoneName then here = true break end
+        end
+        if here then
+            for id, pct in pairs(self:WorldDropsOf(name) or {}) do
+                local list = chances[id]
+                if not list then list = {}; chances[id] = list end
+                list[#list + 1] = pct
+            end
+        end
+    end
+    local out = {}
+    for id, list in pairs(chances) do
+        table.sort(list)
+        out[id] = { list[math.floor(#list / 2) + 1], #list }
+    end
+    worldByZone[zoneName] = out
+    return out
+end
+
+-- The world-drop line of an item's sources: "any of 712 creatures (level 38-61), each 0.03%".
+local function worldSource(id)
+    local n, lo, hi, usual = ns:WorldDropInfo(id)
+    if not n then return nil end
+    local levels = lo == hi and ("level " .. lo) or ("level " .. lo .. "-" .. hi)
+    return { t = "world", n = string.format("any of %d creature%s (%s), each", n, n == 1 and "" or "s", levels),
+             dc = usual, k = "boe" }
+end
+
 function ns:GetSources(id)
     local out, seen = {}, {}
     local faction = ns.PlayerFaction()
@@ -425,6 +602,20 @@ function ns:GetSources(id)
     end
     add(GearGuideLearned.sources[id])
     if ns.GetSharedSources then add(ns:GetSharedSources(id)) end  -- from other GearGuide users
+    -- World drop: one line for all its creatures, after the item's real loot table (drops at 1%+)
+    -- and in place of Questie's "... and N more creatures".
+    local world = worldSource(id)
+    if world then
+        for i = #out, 1, -1 do
+            local s = out[i]
+            if s.t == "drop" and type(s.n) == "string" and s.n:find("^%.%.%. and %d+ more") then table.remove(out, i) end
+        end
+        local at = #out + 1
+        for i, s in ipairs(out) do
+            if s.t == "drop" and not (s.dc and s.dc >= 1) then at = i; break end
+        end
+        table.insert(out, at, world)
+    end
     -- Drops without a location (learned, shared, hand-added): the same creature's shipped spot.
     for i, s in ipairs(out) do
         if s.t == "drop" and s.k ~= "object" and not s.loc and s.n then
@@ -522,6 +713,7 @@ end
 function ns:HasSource(id)
     local dbItem = GearGuide_Data.items[id]
     if dbItem and dbItem.src and dbItem.src[1] ~= nil then return true end
+    if GearGuide_WorldDrops and GearGuide_WorldDrops.items[id] then return true end
     local learned = GearGuideLearned.sources[id]
     if learned and learned[1] ~= nil then return true end
     local shared = GearGuideLearned.shared and GearGuideLearned.shared[id]  -- raw: no copy per call
@@ -545,37 +737,80 @@ end
 local RAID_AREAS = { [2717] = true, [2677] = true, [2159] = true, [1977] = true, [3429] = true,
     [3428] = true, [3456] = true }  -- MC, BWL, Onyxia, ZG, AQ20, AQ40, Naxxramas
 local INSTANCE_MIN_CHANCE = 0.5     -- % ; below this a drop is a world drop, not instance loot
+-- WoW Forever's nine new dungeons, always in the menu so players see they exist, even before any
+-- of their loot is known. area: the area ID where QuestieDB's Forever dungeons.lua has one (the
+-- client then gives the localized name); the others go by name until the data has them. min/max:
+-- the dungeon's level range, shown while no loot is known.
+local FOREVER_DUNGEONS = {
+    { area = 16919, name = "The Hall of Thanes", min = 13, max = 18 },
+    { area = 16611, name = "Ruins of Lordaeron", min = 15, max = 20 },
+    { area = 16732, name = "Excavation Site: Wetlands", min = 24, max = 29 },
+    { area = 16544, name = "City of Dalaran", min = 28, max = 33 },
+    { name = "The Drowned City", min = 35, max = 40 },
+    { name = "Krol'dok Stronghold", min = 40, max = 45 },
+    { name = "Alcaz Prison", min = 48, max = 53 },
+    { name = "Blackmaw Hold", min = 55, max = 60 },
+    { name = "Shaper's Terrace", min = 58, max = 60 },
+}
+
+-- Zone names compared loosely: the game may say "The Drowned City" where the list says "Drowned City".
+local function nameKey(name)
+    return (name:lower():gsub("^the%s+", ""))
+end
 
 function ns:InstanceIndex()
     if self.instanceIndex then return self.instanceIndex end
     local data = GearGuide_Data
     local areas, byName = {}, {}
+    local function addArea(key, name, raid)
+        if areas[key] or not name or name == "" then return areas[key] end
+        areas[key] = { area = key, name = name, raid = raid or false, items = {} }
+        byName[nameKey(name)] = areas[key]
+        return areas[key]
+    end
     for _, loc in pairs(data.locs or {}) do
         for _, entry in ipairs(type(loc) == "table" and loc or {}) do
-            if entry.e and not areas[entry.e] then
-                local name = ns.ZoneName(entry.e)
-                if name and name ~= "" then
-                    areas[entry.e] = { area = entry.e, name = name, raid = RAID_AREAS[entry.e] or false, items = {} }
-                    byName[name] = areas[entry.e]
-                end
-            end
+            if entry.e then addArea(entry.e, ns.ZoneName(entry.e), RAID_AREAS[entry.e]) end
         end
+    end
+    for _, d in ipairs(FOREVER_DUNGEONS) do
+        local inst = byName[nameKey(d.name)]
+            or (d.area and addArea(d.area, ns.ZoneName(d.area) or d.name, false))
+            or addArea(d.name, d.name, false)
+        if inst then inst.levels = { d.min, d.max } end
+    end
+    -- Instances the player looted in that the shipped data doesn't know (new dungeons): by name.
+    for name, kind in pairs(GearGuideLearned.instanceZones or {}) do
+        if not byName[nameKey(name)] then addArea(name, name, kind == "raid") end
     end
     local function instanceOf(z)
         if type(z) == "number" then return areas[z] end
-        return z and byName[z]
+        return type(z) == "string" and byName[nameKey(z)] or nil
     end
-    -- Shipped sources: judged per source by its own drop chance (unknown counts as loot).
+    -- Shipped sources: judged per source by its own drop chance. An unknown chance counts as loot,
+    -- unless the item is known elsewhere only as a rare world drop (new dungeons' creatures carry
+    -- world drops with no chance on record).
     local bestChance = {}
+    for id, dbItem in pairs(data.items or {}) do
+        if type(dbItem) == "table" and type(dbItem.dc) == "table" then
+            for _, dc in pairs(dbItem.dc) do
+                if type(dc) == "number" and dc > 0 then bestChance[id] = math.max(bestChance[id] or 0, dc) end
+            end
+        end
+    end
     for id, dbItem in pairs(data.items or {}) do
         if type(dbItem) == "table" and dbItem.src then
             local chances = type(dbItem.dc) == "table" and dbItem.dc or nil
+            local best = bestChance[id]
             for i, s in ipairs(dbItem.src) do
                 if type(s) == "number" then s = data.sources and data.sources[s] end
                 local inst = type(s) == "table" and s.t == "drop" and instanceOf(s.z)
                 local dc = chances and chances[i]
-                if dc and dc > 0 then bestChance[id] = math.max(bestChance[id] or 0, dc) end
-                if inst and (not dc or dc == 0 or dc >= INSTANCE_MIN_CHANCE) then inst.items[id] = true end
+                local known = dc and dc > 0
+                if inst and ((known and dc >= INSTANCE_MIN_CHANCE)
+                    or (not known and (not best or best >= INSTANCE_MIN_CHANCE))) then
+                    inst.items[id] = true
+                end
             end
         end
     end
@@ -603,10 +838,16 @@ function ns:InstanceIndex()
             local item = self:GetItem(id)
             if item then levels[#levels + 1] = ns.EffectiveLevel(item) end
         end
+        inst.noLoot = #levels == 0
         if #levels > 0 then
             table.sort(levels)
             local function at(p) return levels[math.max(1, math.min(#levels, math.floor(#levels * p + 0.5)))] end
             inst.minL, inst.midL, inst.maxL = at(0.2), at(0.5), at(0.8)
+            list[#list + 1] = inst
+        elseif inst.levels then
+            -- Known to exist, loot not yet: listed with the dungeon's own level range.
+            inst.minL, inst.maxL = inst.levels[1], inst.levels[2]
+            inst.midL = (inst.minL + inst.maxL) / 2
             list[#list + 1] = inst
         end
     end
@@ -617,6 +858,140 @@ function ns:InstanceIndex()
     end)
     self.instanceIndex = { list = list, byArea = areas }
     return self.instanceIndex
+end
+
+---------------------------------------------------------------------------
+-- Outdoor zones (Gear Browser "Zone" filter): every zone the client's world map knows, new WoW
+-- Forever zones included, plus zones only known from loot. Dungeons and raids aren't zones (the
+-- dungeon menu has them). A zone's items: creature/chest drops, vendors and quests located there,
+-- with the instance rule for chances (rare world drops left out).
+---------------------------------------------------------------------------
+local ZONE_MAP = (Enum and Enum.UIMapType and Enum.UIMapType.Zone) or 3
+local DUNGEON_MAP = (Enum and Enum.UIMapType and Enum.UIMapType.Dungeon) or 4
+local WORLD_MAPS = { 946, 947 }  -- Cosmic, Azeroth: their descendants are every map
+local mapZones = {}
+-- The zone map a world map ID lies in (itself, or the zone above a sub-zone map), or nil for
+-- continents and dungeon maps.
+local function zoneOfMap(m)
+    if mapZones[m] == nil then
+        local found, id = false, m
+        for _ = 1, 8 do
+            local info = id and C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(id)
+            if not info or info.mapType == DUNGEON_MAP then break end
+            if info.mapType == ZONE_MAP then found = id; break end
+            if (info.mapType or 0) < ZONE_MAP then break end  -- a continent: not inside one zone
+            id = info.parentMapID
+        end
+        mapZones[m] = found
+    end
+    return mapZones[m] or nil
+end
+
+function ns:ZoneIndex()
+    if self.zoneIndex then return self.zoneIndex end
+    local data = GearGuide_Data
+    local instances = {}
+    for _, inst in pairs(self:InstanceIndex().byArea) do instances[nameKey(inst.name)] = true end
+    for name in pairs(GearGuideLearned.instanceZones or {}) do instances[nameKey(name)] = true end
+    local zones, byName = {}, {}
+    local function continentOf(parent)
+        local info = parent and C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(parent)
+        return info and info.name or "Other"
+    end
+    local function addZone(key, name, continent)
+        if zones[key] then return zones[key] end
+        if not name or name == "" or instances[nameKey(name)] then return nil end
+        local same = byName[nameKey(name)]
+        if same then zones[key] = same; return same end  -- one zone under two map IDs
+        local z = { key = key, name = name, continent = continent or "Other", items = {} }
+        if type(key) == "number" and C_Map and C_Map.GetMapLevels then
+            local lo, hi = C_Map.GetMapLevels(key)
+            if lo and hi and lo > 0 and hi > 0 then z.levels = { lo, hi } end
+        end
+        zones[key], byName[nameKey(name)] = z, z
+        return z
+    end
+    local function zoneForMap(m)
+        local zid = m and zoneOfMap(m)
+        if not zid then return nil end
+        if zones[zid] then return zones[zid] end
+        local info = C_Map.GetMapInfo(zid)
+        return addZone(zid, info and info.name, continentOf(info and info.parentMapID))
+    end
+    if C_Map and C_Map.GetMapChildrenInfo then
+        for _, root in ipairs(WORLD_MAPS) do
+            for _, info in ipairs(C_Map.GetMapChildrenInfo(root, ZONE_MAP, true) or {}) do
+                addZone(info.mapID, info.name, continentOf(info.parentMapID))
+            end
+        end
+    end
+    -- One source's zones: its outdoor map spots (dungeon entrances aren't loot of the zone), else
+    -- its zone (area ID or name) when that is an outdoor zone.
+    local function place(id, s, loc)
+        if s.t == "craft" or s.t == "world" or s.t == "start" then return end
+        local placed = false
+        for _, entry in ipairs(type(loc) == "table" and loc or {}) do
+            if type(entry) == "table" and not entry.e then
+                local z = zoneForMap(entry.m)
+                if z then z.items[id] = true; placed = true end
+            end
+        end
+        if not placed and s.z then
+            local name = ns.ZoneName(s.z)
+            local z = type(name) == "string" and byName[nameKey(name)]
+            if z then z.items[id] = true end
+        end
+    end
+    local locs = data.locs or {}
+    for id, dbItem in pairs(data.items or {}) do
+        if type(dbItem) == "table" and dbItem.src then
+            local chances = type(dbItem.dc) == "table" and dbItem.dc or nil
+            local best = 0
+            for _, c in ipairs(chances or {}) do best = math.max(best, c) end
+            for i, s in ipairs(dbItem.src) do
+                if type(s) == "number" then s = data.sources and data.sources[s] end
+                if type(s) == "table" then
+                    local dc = chances and chances[i]
+                    local known = dc and dc > 0
+                    local rare = s.t == "drop" and ((known and dc < INSTANCE_MIN_CHANCE)
+                        or (not known and best > 0 and best < INSTANCE_MIN_CHANCE))
+                    if not rare then place(id, s, s.loc or (s.l and locs[s.l])) end
+                end
+            end
+        end
+    end
+    -- Seen in game (own and shared): zone names from the client; zones nobody listed join.
+    for _, store in ipairs({ GearGuideLearned.sources, GearGuideLearned.shared }) do
+        for id, list in pairs(store or {}) do
+            for _, s in ipairs(type(list) == "table" and list or {}) do
+                if type(s) == "table" then
+                    if type(s.z) == "string" and not byName[nameKey(s.z)] and s.t ~= "craft" then
+                        addZone(s.z, s.z, "Other")
+                    end
+                    place(id, s, s.loc)
+                end
+            end
+        end
+    end
+    local list, seen = {}, {}
+    for _, z in pairs(zones) do
+        if not seen[z] then seen[z] = true; list[#list + 1] = z end
+    end
+    table.sort(list, function(a, b)
+        if a.continent ~= b.continent then
+            if (a.continent == "Other") ~= (b.continent == "Other") then return b.continent == "Other" end
+            return a.continent < b.continent
+        end
+        return a.name < b.name
+    end)
+    self.zoneIndex = { list = list, byKey = zones }
+    return self.zoneIndex
+end
+
+-- Item ids obtainable in an outdoor zone (map ID or name), as a set; nil for an unknown zone.
+function ns:ZoneItems(key)
+    local z = key and self:ZoneIndex().byKey[key]
+    return z and z.items or nil
 end
 
 -- Raid gear: an item named like loot from a raid (the raid's own copy, and look-alikes such as
@@ -698,6 +1073,7 @@ function ns.FormatSource(s)
     if s.shared then text = text .. " |cff888888(shared by players)|r" end
     if s.k == "guess" then text = text .. " |cff888888(likely)|r" end
     if s.k == "rare" then text = text .. " |cffc0c0c0(rare)|r" end
+    if s.k == "boe" then text = text .. " |cff888888(BoE)|r" end
     return text
 end
 
@@ -718,18 +1094,18 @@ function ns:ShowSourceOnMap(s)
     lastIndex = (lastShown == key) and (lastIndex % #s.loc) + 1 or 1
     lastShown = key
     local entry = s.loc[lastIndex]
-    local points = {}
-    for i = 1, #(entry.p or {}) - 1, 2 do
-        points[#points + 1] = { x = entry.p[i] / 100, y = entry.p[i + 1] / 100 }
+    local points, flatPoints = {}, ns.Numbers(entry.p) or {}
+    for i = 1, #flatPoints - 1, 2 do
+        points[#points + 1] = { x = flatPoints[i] / 100, y = flatPoints[i + 1] / 100 }
     end
     local routes = {}
-    for _, r in ipairs(entry.r or {}) do
+    for _, r in ipairs(ns.NumberLists(entry.r) or {}) do
         local route = {}
         for i = 1, #r - 1, 2 do route[#route + 1] = { x = r[i] / 100, y = r[i + 1] / 100 } end
         if #route > 1 then routes[#routes + 1] = route end
     end
     local areas = {}
-    for _, flat in ipairs(entry.a or {}) do
+    for _, flat in ipairs(ns.NumberLists(entry.a) or {}) do
         local poly = {}
         for i = 1, #flat - 1, 2 do poly[#poly + 1] = { x = flat[i] / 100, y = flat[i + 1] / 100 } end
         if #poly >= 3 then areas[#areas + 1] = poly end
@@ -752,8 +1128,17 @@ function ns:SourceSummary(id, preferZone)
     if #list == 0 then return "|cff888888Not discovered yet|r" end
     local first = list[1]
     if preferZone then
+        local function inZone(s)
+            if ns.ZoneName(s.z) == preferZone then return true end
+            for _, e in ipairs(type(s.loc) == "table" and s.loc or {}) do  -- outdoor spots (Zone filter)
+                local zid = type(e) == "table" and not e.e and e.m and zoneOfMap(e.m)
+                local info = zid and C_Map.GetMapInfo(zid)
+                if info and info.name == preferZone then return true end
+            end
+            return false
+        end
         for _, s in ipairs(list) do
-            if s.t == "drop" and ns.ZoneName(s.z) == preferZone then first = s break end
+            if (s.t == "drop" or s.t == "vendor" or s.t == "quest") and inZone(s) then first = s break end
         end
     end
     local text = ns.FormatSource(first)
@@ -929,6 +1314,61 @@ function ns:ResetCustomWeights()
     local c = GearGuideCharDB.custom
     c.weights = self:GetWeights(self:GetPlayerClass(), c.base, 60)
     self:RequestRefresh()
+end
+
+---------------------------------------------------------------------------
+-- Pawn scale import: ( Pawn: v1: "Name": Class=Warrior, Strength=2, CritRating=0.8, ... )
+-- Pawn's stat names map to GearGuide's. Pawn values are per point; a "...Rating" stat is per rating
+-- point and becomes per 1% here (GearGuide's percent stats), with the same conversion items use.
+-- Bare Hit/Crit (Pawn's classic percent stats) are per 1% already.
+---------------------------------------------------------------------------
+local PAWN_STATS = {
+    strength = "STR", agility = "AGI", stamina = "STA", intellect = "INT", spirit = "SPI",
+    armor = "ARMOR", dps = "DPS", meleedps = "DPS", rangeddps = "RDPS",
+    ap = "AP", attackpower = "AP", rap = "RAP", rangedattackpower = "RAP",
+    spelldamage = "SP", spellpower = "SP", healing = "HEAL", mp5 = "MP5",
+    hit = "HIT", spellhit = "SHIT", crit = "CRIT", spellcrit = "SCRIT", haste = "HASTE", spellhaste = "HASTE",
+    expertise = "EXPERTISE", defense = "DEF", dodge = "DODGE", parry = "PARRY", block = "BLOCK",
+}
+local PAWN_INFO = { class = true, classid = true, spec = true, specid = true, name = true }
+
+-- text -> weights { STAT = per point/per 1% }, scale name, { ignored Pawn stat names }; or nil, error.
+function ns.ParsePawnScale(text)
+    text = tostring(text or "")
+    local name, body = text:match('%(%s*Pawn%s*:%s*v%d+%s*:%s*"([^"]*)"%s*:(.-)%)')
+    if not body then body = text:match("^%s*(.-)%s*$") end  -- also a bare "Strength=2, Agility=1" list
+    local weights, ignored, found = {}, {}, 0
+    for key, value in body:gmatch("([%w_]+)%s*=%s*([%-%d%.]+)") do
+        local k = key:lower()
+        local v = tonumber(value)
+        local rating = k:find("rating$") ~= nil
+        local stat = PAWN_STATS[(k:gsub("rating$", ""))]
+        if stat and v then
+            if rating and ns.RatingPct(stat, 60) then v = v / ns.RatingPct(stat, 60) end  -- per point -> per 1%
+            if v ~= 0 then weights[stat] = (weights[stat] or 0) + v end
+            found = found + 1
+        elseif not PAWN_INFO[k] then
+            ignored[#ignored + 1] = key
+        end
+    end
+    if found == 0 then return nil, "That doesn't look like a Pawn scale: no stat weights found." end
+    for stat, v in pairs(weights) do weights[stat] = math.floor(v * 1000 + 0.5) / 1000 end
+    return weights, name, ignored
+end
+
+-- Replaces the custom stat weights with a Pawn scale and switches to them. ok, message.
+function ns:ImportPawnScale(text)
+    local weights, name, ignored = ns.ParsePawnScale(text)
+    if not weights then return false, name end
+    self:InitCustomWeights()
+    GearGuideCharDB.custom.weights = weights
+    self:SetPlayerSpec("CUSTOM")
+    local n = 0
+    for _ in pairs(weights) do n = n + 1 end
+    local msg = string.format("Imported %s: %d stat weight%s", name and ('"' .. name .. '"') or "the Pawn scale",
+        n, n == 1 and "" or "s")
+    if #ignored > 0 then msg = msg .. " (not used by GearGuide: " .. table.concat(ignored, ", ") .. ")" end
+    return true, msg
 end
 
 function ns:SpecLabel(class, key)
@@ -1130,7 +1570,7 @@ end
 function ns:RequestRefresh()
     if self.refreshPending then return end
     self.refreshPending = true
-    self.instanceIndex = nil  -- new sources may add instance loot
+    self.instanceIndex, self.zoneIndex = nil, nil  -- new sources may add instance or zone loot
     if self.InvalidateCreatureTips then self:InvalidateCreatureTips() end  -- upgrades may have changed
     if self.InvalidateBadges then self:InvalidateBadges() end
     C_Timer.After(0.3, function()
@@ -1156,6 +1596,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
         local updating = GearGuideDB ~= nil  -- settings from an earlier GearGuide: an update, not a fresh install
         GearGuideDB = GearGuideDB or {}
         applyDefaults(GearGuideDB, defaults)
+        if ns.Skin then ns.Skin:ApplyTheme(true) end  -- before any window is built, so they start in the chosen colors
         if ns.NoteVersion then ns:NoteVersion(updating) end  -- WhatsNew.lua: "NEW" badges after updates
         -- 0.15.2: the map shades whole areas now, so the game's waypoint pin is off by default
         -- (it was on before). Once; the Settings checkbox turns it back on.

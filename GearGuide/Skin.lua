@@ -46,6 +46,70 @@ Skin.C = {
 }
 local C = Skin.C
 
+-- The palette as shipped; themes start from it (Skin:ApplyTheme changes C in place).
+local DEFAULT = {}
+for k, v in pairs(C) do DEFAULT[k] = { v[1], v[2], v[3], v[4] } end
+
+-- Color themes (Settings > General > Appearance): the window colors each one changes; the rest
+-- (text, upgrade green, quality colors) stays. "selected" always follows the accent.
+local function tint(bg, edge, accent, headerLight)
+    -- bg: window background rgb; edge: outline rgb; accent: rgb; headerLight: slot header rgb
+    return {
+        bg = { bg[1], bg[2], bg[3], 0.97 },
+        panel = { bg[1] * 0.6, bg[2] * 0.6, bg[3] * 0.6, 0.55 },
+        header = { bg[1] * 0.2, bg[2] * 0.2, bg[3] * 0.2, 0.45 },
+        button = { bg[1] * 0.7, bg[2] * 0.7, bg[3] * 0.7, 0.55 },
+        menu = { bg[1] * 0.55, bg[2] * 0.55, bg[3] * 0.55, 0.98 },
+        edge = { edge[1], edge[2], edge[3], 0.70 },
+        accent = { accent[1], accent[2], accent[3], 1 },
+        rowHeader = { headerLight[1] * 0.38, headerLight[2] * 0.38, headerLight[3] * 0.38, 0.40 },
+        rowHeaderLight = { headerLight[1], headerLight[2], headerLight[3], 0.50 },
+    }
+end
+Skin.THEMES = {
+    { value = "copper", text = "Copper (default)", colors = {} },
+    { value = "slate", text = "Slate blue", colors = tint({ 0.075, 0.085, 0.105 }, { 0.30, 0.36, 0.46 }, { 0.47, 0.70, 0.96 }, { 0.10, 0.13, 0.18 }) },
+    { value = "forest", text = "Forest green", colors = tint({ 0.070, 0.090, 0.070 }, { 0.30, 0.42, 0.28 }, { 0.55, 0.85, 0.45 }, { 0.11, 0.16, 0.10 }) },
+    { value = "crimson", text = "Crimson", colors = tint({ 0.100, 0.062, 0.060 }, { 0.48, 0.25, 0.24 }, { 0.93, 0.42, 0.38 }, { 0.19, 0.09, 0.09 }) },
+    { value = "violet", text = "Violet", colors = tint({ 0.080, 0.066, 0.100 }, { 0.38, 0.30, 0.48 }, { 0.72, 0.55, 0.95 }, { 0.15, 0.11, 0.19 }) },
+    { value = "graphite", text = "Graphite and gold", colors = tint({ 0.070, 0.070, 0.070 }, { 0.36, 0.36, 0.36 }, { 1.00, 0.82, 0.00 }, { 0.13, 0.13, 0.13 }) },
+}
+
+-- Colors the player can pick by hand (Settings > Appearance). Each one overrides only that color
+-- on top of the chosen theme; GearGuideDB.skin.colors[key] = {r, g, b} (the theme keeps alpha).
+Skin.CUSTOM_COLORS = {
+    { key = "accent", text = "Accent", tip = "Titles, the active tab, selections and scroll bars." },
+    { key = "bg", text = "Background", tip = "The window background. Panels, buttons and menus follow it." },
+    { key = "header", text = "Title bar", tip = "The band at the top of the windows." },
+    { key = "text", text = "Text", tip = "Normal text (after a reload)." },
+    { key = "textDim", text = "Dim text", tip = "Notes, hints and secondary text (after a reload)." },
+    { key = "edge", text = "Border", tip = "The window border and the outlines of buttons and boxes." },
+}
+
+-- Window border styles (main window, mini tracker). Buttons, inputs and lists keep 1px lines.
+-- size: 1-6 (Settings "Border size"); def: the style's own size. Solid: line width in screen
+-- pixels. Textured game borders: edge size 8 + 2 * size (3 = the tooltip's 14, 4 = the dialog's 16).
+Skin.BORDERS = {
+    { value = "solid", text = "Solid line (default)", def = 1 },
+    { value = "tooltip", text = "Tooltip border", file = "Interface\\Tooltips\\UI-Tooltip-Border", def = 3 },
+    { value = "dialog", text = "Dialog border", file = "Interface\\DialogFrame\\UI-DialogBox-Border", def = 4 },
+    { value = "none", text = "No border" },
+}
+Skin.BORDER_SIZE_MIN, Skin.BORDER_SIZE_MAX = 1, 6
+-- The border in use: { value, size, file, edge (textured edge size), inset (title bar offset) }.
+local function borderFor(value, size)
+    local s = Skin.BORDERS[1]
+    for _, b in ipairs(Skin.BORDERS) do if b.value == value then s = b end end
+    size = math.floor(math.max(Skin.BORDER_SIZE_MIN, math.min(Skin.BORDER_SIZE_MAX, tonumber(size) or s.def or 1)))
+    if s.value == "none" then return { value = "none", inset = 0 } end
+    if s.file then
+        local edge = 8 + 2 * size
+        return { value = s.value, size = size, file = s.file, edge = edge, inset = math.floor(edge * 0.22 + 0.5) }
+    end
+    return { value = "solid", size = size, inset = size }
+end
+local borderStyle = borderFor("solid")
+
 -- Arial Narrow is the client font closest to a modern condensed UI font.
 -- Locales whose glyphs it lacks fall back to the client's standard font.
 do
@@ -153,17 +217,39 @@ local function hairline(tex, axis)
 end
 Skin.Hairline = function(_, tex, axis) return hairline(tex, axis) end
 
+-- Windows (WindowBackdrop) take the chosen border style; everything else a 1px line.
+local styled = {}  -- border style value -> backdrop table (shared)
+local function backdropOf(frame, px)
+    local s = rawget(frame, "ggWindow") and borderStyle
+    if not s or (s.value == "solid" and s.size == 1) then return backdropFor(px) end
+    if s.value == "solid" then return backdropFor(px * s.size) end
+    local key = s.value .. (s.edge or "")
+    local b = styled[key]  -- shared per style and size (applyEdge compares identity)
+    if not b then
+        if s.file then
+            local i = s.inset
+            b = { bgFile = WHITE, edgeFile = s.file, edgeSize = s.edge,
+                  insets = { left = i, right = i, top = i, bottom = i } }
+        else
+            b = { bgFile = WHITE }  -- no edge at all (a 0-alpha 1px edge can still show)
+        end
+        styled[key] = b
+    end
+    return b
+end
+
 -- Re-sizes a frame's border for its current scale, keeping its colors.
 local function applyEdge(frame)
-    local px = onePixel(frame)
-    if frame.ggEdge == px then return end
-    frame.ggEdge = px
+    if rawget(frame, "ggNoBackdrop") then return end  -- the mini tracker at 0% opacity
+    local bd = backdropOf(frame, onePixel(frame))
+    if frame.ggBackdrop == bd then return end
+    frame.ggBackdrop = bd
     if frame.SetBackdrop then
         local r, g, b, a
         if frame.GetBackdropColor then r, g, b, a = frame:GetBackdropColor() end
         local er, eg, eb, ea
         if frame.GetBackdropBorderColor then er, eg, eb, ea = frame:GetBackdropBorderColor() end
-        frame:SetBackdrop(backdropFor(px))
+        frame:SetBackdrop(bd)
         if r then frame:SetBackdropColor(r, g, b, a) end
         if er then frame:SetBackdropBorderColor(er, eg, eb, ea) end
     end
@@ -190,12 +276,15 @@ end
 function Skin:SetBackdrop(frame, bgKey, borderKey)
     local bg, border = col(bgKey or "bg"), col(borderKey or "border")
     edgeFrames[frame] = true
+    frame.ggBgKey, frame.ggBorderKey = bgKey or "bg", borderKey or "border"  -- for a theme change
     if frame.SetBackdrop then
-        local px = onePixel(frame)
-        frame.ggEdge = px
-        frame:SetBackdrop(backdropFor(px))
+        local bd = backdropOf(frame, onePixel(frame))
+        frame.ggBackdrop = bd
+        frame:SetBackdrop(bd)
         frame:SetBackdropColor(bg[1], bg[2], bg[3], bg[4] or 1)
-        frame:SetBackdropBorderColor(border[1], border[2], border[3], border[4] or 1)
+        -- A textured border is drawn at full strength; its texture has its own shading.
+        local ba = bd.insets and 1 or (border[4] or 1)
+        frame:SetBackdropBorderColor(border[1], border[2], border[3], ba)
         return
     end
     -- Fallback for frames created without BackdropTemplate: plain textures.
@@ -225,10 +314,16 @@ local function setBorder(frame, key)
 end
 Skin.SetBorderColor = function(_, frame, key) setBorder(frame, key) end
 
+-- A font size scaled by the Text size setting (Skin.textScale, 0.85-1.25).
+function Skin.FontSize(size)
+    return math.floor((size or Skin.SIZE.normal) * (Skin.textScale or 1) + 0.5)
+end
+
 local function applyFont(obj, size, flags)
-    obj:SetFont(Skin.FONT, size or Skin.SIZE.normal, flags or "")
+    size = Skin.FontSize(size)
+    obj:SetFont(Skin.FONT, size, flags or "")
     if not obj:GetFont() and STANDARD_TEXT_FONT then
-        obj:SetFont(STANDARD_TEXT_FONT, size or Skin.SIZE.normal, flags or "")
+        obj:SetFont(STANDARD_TEXT_FONT, size, flags or "")
     end
     if not flags or flags == "" then
         obj:SetShadowColor(0, 0, 0, 0.85)
@@ -244,6 +339,69 @@ function Skin:Text(parent, size, colorKey, flags)
     setTextColor(fs, colorKey or "text")
     fs:SetJustifyH("LEFT")
     return fs
+end
+
+-- Extra: a word in spaced capitals (the client has no letter spacing, so one FontString per
+-- letter). Friz Quadrata, the game's title font. Returns a frame sized to the letters.
+Skin.TITLE_FONT = "Fonts\\FRIZQT__.TTF"
+function Skin:Wordmark(parent, text, size, track, colorKey)
+    local f = CreateFrame("Frame", nil, parent)
+    local px, prev, w, h = Skin.FontSize(size), nil, 0, 0
+    f.letters = {}
+    for ch in text:gmatch(".") do
+        local fs = self:Text(f, size, colorKey or "accent")
+        fs:SetFont(self.TITLE_FONT, px, "")
+        if not fs:GetFont() then applyFont(fs, size) end  -- client without the font: the skin font
+        fs:SetText(ch)
+        if prev then fs:SetPoint("LEFT", prev, "RIGHT", track, 0) else fs:SetPoint("LEFT", f, "LEFT", 0, 0) end
+        w = w + (fs:GetStringWidth() or 0) + (prev and track or 0)
+        h = math.max(h, fs:GetStringHeight() or px)
+        f.letters[#f.letters + 1] = fs
+        prev = fs
+    end
+    f:SetSize(math.ceil(w), math.ceil(math.max(h, px)))
+    f.text = text
+    return f
+end
+
+-- Extra: a Wordmark filled with a vertical gradient (top -> bottom), like the game's gold titles.
+-- FontStrings take one color, so the word is drawn again in horizontal bands: each band is a
+-- clipping frame showing only its slice of the letters, in its own color. The base letters
+-- (bottom color, with the shadow) show below the last band. Flat middle color on a client
+-- that can't clip.
+Skin.GOLD_TOP, Skin.GOLD_BOTTOM = { 1, 0.925, 0.667 }, { 0.839, 0.627, 0.275 }
+local GRADIENT_BANDS = 6
+function Skin:GradientWordmark(parent, text, size, track, top, bottom)
+    top, bottom = top or self.GOLD_TOP, bottom or self.GOLD_BOTTOM
+    local function mix(t)
+        return top[1] + (bottom[1] - top[1]) * t, top[2] + (bottom[2] - top[2]) * t,
+            top[3] + (bottom[3] - top[3]) * t
+    end
+    local f = self:Wordmark(parent, text, size, track)
+    local clips = f.SetClipsChildren and true or false
+    for _, fs in ipairs(f.letters) do fs:SetTextColor(mix(clips and 1 or 0.5)) end
+    if not clips then return f end
+    local n = GRADIENT_BANDS
+    local bandH = f:GetHeight() / n
+    f.bands = {}
+    for i = 1, n - 1 do
+        local band = CreateFrame("Frame", nil, f)
+        band:SetClipsChildren(true)
+        band:SetPoint("TOPLEFT", f, "TOPLEFT", -2, -(i - 1) * bandH)
+        band:SetPoint("TOPRIGHT", f, "TOPRIGHT", 2, -(i - 1) * bandH)
+        band:SetHeight(bandH)
+        local r, g, b = mix((i - 1) / (n - 1))
+        for _, base in ipairs(f.letters) do
+            local fs = band:CreateFontString(nil, "OVERLAY")
+            fs:SetFont(base:GetFont())
+            fs:SetShadowOffset(0, 0)
+            fs:SetText(base:GetText())
+            fs:SetTextColor(r, g, b)
+            fs:SetPoint("CENTER", base, "CENTER", 0, 0)
+        end
+        f.bands[i] = band
+    end
+    return f
 end
 
 -- Extra: plain skinned container frame.
@@ -556,6 +714,7 @@ local HEADER_H, PAD = 24, 6
 -- opts = { vignette = 70 (band size px, false = none), watermark = texturePath, watermarkAlpha = 0.07 }
 function Skin:WindowBackdrop(f, opts)
     opts = opts or {}
+    f.ggWindow = true  -- takes the border style setting
     self:SetBackdrop(f, "bg", "edge")
     local band = opts.vignette
     if band == nil then band = 70 end
@@ -596,6 +755,83 @@ function Skin:WindowBackdrop(f, opts)
     return f
 end
 
+-- A window's title bar sits just inside its border (wider for the textured border styles).
+function Skin:PlaceHeader(f)
+    local header, i = rawget(f, "header"), borderStyle.inset or 1
+    if not header then return end
+    header:ClearAllPoints()
+    header:SetPoint("TOPLEFT", f, "TOPLEFT", i, -i)
+    header:SetPoint("TOPRIGHT", f, "TOPRIGHT", -i, -i)
+end
+
+-- Saved settings from before custom colors and border sizes: accent -> colors.accent,
+-- "thin"/"thick" -> a 1 or 2 pixel solid line.
+local function migrate(cfg)
+    if type(cfg.colors) ~= "table" then cfg.colors = {} end
+    if type(cfg.accent) == "table" then
+        if not cfg.colors.accent then cfg.colors.accent = cfg.accent end
+        cfg.accent = nil
+    end
+    if cfg.border == "thin" then cfg.border = "solid"
+    elseif cfg.border == "thick" then cfg.border, cfg.borderSize = "solid", cfg.borderSize or 2 end
+end
+
+-- A hand-picked color ({r, g, b}) or nil.
+function Skin:CustomColor(key)
+    local cfg = GearGuideDB and GearGuideDB.skin
+    local c = cfg and type(cfg.colors) == "table" and cfg.colors[key]
+    if type(c) == "table" and tonumber(c[1]) and tonumber(c[2]) and tonumber(c[3]) then return c end
+end
+
+-- The window border in use ({ value, size, inset, ... }; see borderFor).
+function Skin:BorderStyle() return borderStyle end
+
+-- Colors and window border from GearGuideDB.skin = { theme, colors = {key = {r, g, b}}, border,
+-- borderSize }. Changes the palette in place, then re-colors every skinned backdrop. Text, tabs and
+-- other textures colored when they were built pick the new colors up after a /reload.
+function Skin:ApplyTheme(loading)  -- loading: at ADDON_LOADED (no tracker to refresh yet)
+    local cfg = GearGuideDB and GearGuideDB.skin or {}
+    migrate(cfg)
+    local theme = self.THEMES[1]
+    for _, t in ipairs(self.THEMES) do if t.value == cfg.theme then theme = t end end
+    for k, v in pairs(DEFAULT) do
+        local c, o = C[k], theme.colors[k] or v
+        c[1], c[2], c[3], c[4] = o[1], o[2], o[3], o[4]
+    end
+    -- Hand-picked colors win over the theme (the theme's alpha stays). A picked background also
+    -- sets the panels, buttons and menus, which a theme derives from its background the same way.
+    for _, slot in ipairs(self.CUSTOM_COLORS) do
+        local p = self:CustomColor(slot.key)
+        if p then
+            local c = C[slot.key]
+            c[1], c[2], c[3] = p[1], p[2], p[3]
+            if slot.key == "bg" then
+                for k, f in pairs({ panel = 0.6, button = 0.7, menu = 0.55 }) do
+                    C[k][1], C[k][2], C[k][3] = p[1] * f, p[2] * f, p[3] * f
+                end
+            end
+        end
+    end
+    C.selected[1], C.selected[2], C.selected[3] = C.accent[1], C.accent[2], C.accent[3]
+    -- Colorblind-friendly upgrade numbers: blue for better, orange for worse (not green/red).
+    if cfg.colorblind then
+        C.upgrade[1], C.upgrade[2], C.upgrade[3] = 0.35, 0.65, 1.00
+        C.downgrade[1], C.downgrade[2], C.downgrade[3] = 1.00, 0.60, 0.15
+    end
+    -- Text size: read once at load, so a window never mixes two sizes (changes need a reload).
+    if loading then
+        self.textScale = math.max(0.85, math.min(1.25, tonumber(cfg.textScale) or 1))
+    end
+    borderStyle = borderFor(cfg.border, cfg.borderSize)
+    for frame in pairs(edgeFrames) do
+        if rawget(frame, "ggBgKey") and not rawget(frame, "ggNoBackdrop") then
+            self:SetBackdrop(frame, frame.ggBgKey, frame.ggBorderKey)
+        end
+        if rawget(frame, "ggWindow") then self:PlaceHeader(frame) end
+    end
+    if not loading and ns.RefreshMini then ns:RefreshMini() end  -- its opacity scales the backdrop colors
+end
+
 -- Flat text tab: soft white label, full white on hover, copper text + 2px copper underline when
 -- active. t:SetActive(on), t:IsActive(); width follows the label (+ 15px padding per side).
 function Skin:Tab(parent, text, height)
@@ -606,6 +842,14 @@ function Skin:Tab(parent, text, height)
     fs:SetPoint("CENTER", 0, 1)
     fs:SetWordWrap(false)
     t.text = fs
+    -- Bold: the client's fonts have no bold face, so the label is drawn a second time 1px to
+    -- the right (no shadow), which thickens every stroke.
+    local bold = t:CreateFontString(nil, "OVERLAY")
+    bold:SetFont(fs:GetFont())
+    bold:SetShadowOffset(0, 0)
+    bold:SetPoint("LEFT", fs, "LEFT", 1, 0)
+    bold:SetWordWrap(false)
+    t.bold = bold
     local bar = t:CreateTexture(nil, "ARTWORK")
     bar:SetPoint("BOTTOMLEFT", 4, 0)
     bar:SetPoint("BOTTOMRIGHT", -4, 0)
@@ -616,11 +860,13 @@ function Skin:Tab(parent, text, height)
     t.active, t.hovered = false, false
     local function look(self)
         setTextColor(fs, self.active and "accent" or "text", (self.active or self.hovered) and 1 or 0.8)
+        bold:SetTextColor(fs:GetTextColor())
         bar:SetShown(self.active)
     end
     function t:SetText(s)
         fs:SetText(s or "")
-        self:SetWidth(math.ceil(fs:GetStringWidth() or 0) + 30)  -- 15px padding per side
+        bold:SetText(s or "")
+        self:SetWidth(math.ceil(fs:GetStringWidth() or 0) + 31)  -- 15px padding per side + bold
     end
     function t:GetText() return fs:GetText() end
     function t:SetActive(on) self.active = on and true or false; look(self) end
@@ -651,8 +897,8 @@ function Skin:CreateWindow(name, opts)
     -- opts (extras): headerHeight, titleSize, subtitle (dim line under the title; f.subtitle).
     local headerH = opts.headerHeight or HEADER_H
     local header = CreateFrame("Frame", nil, f)
-    header:SetPoint("TOPLEFT", 1, -1)
-    header:SetPoint("TOPRIGHT", -1, -1)
+    f.header = header
+    self:PlaceHeader(f)
     header:SetHeight(headerH)
     header:EnableMouse(true)
     header:RegisterForDrag("LeftButton")
@@ -667,6 +913,7 @@ function Skin:CreateWindow(name, opts)
     mark:SetSize(2, math.min(headerH - 12, 22))
     mark:SetPoint("LEFT", 7, 0)
     setTex(mark, "accent")
+    f.titleMark = mark
     f.header = header
 
     local title = self:Text(header, opts.titleSize or Skin.SIZE.header, "text")
@@ -1010,6 +1257,70 @@ function Skin:List(parent, opts)
 end
 
 ---------------------------------------------------------------------------
+-- Scroll grip: makes a thin scroll thumb (a texture) clickable and draggable. The grip is an
+-- invisible column the caller anchors over the thumb's track; clicking it moves the thumb's
+-- middle to the cursor (then keeps following it while held), dragging the thumb moves it from
+-- where it was grabbed. The thumb widens and lights up while hovered or dragged.
+--   opts.get() -> scroll position 0-1; opts.set(f) scrolls to position f (0-1);
+--   opts.wheel(delta) optional: mouse wheel over the grip; opts.idle: the thumb's color when not
+--   hovered (a palette key or {r, g, b, a}; default "thumb").
+-- grip:Sync() shows the grip only while the thumb is shown (call after updating the thumb).
+---------------------------------------------------------------------------
+function Skin:ScrollGrip(parent, thumb, opts)
+    local grip = CreateFrame("Frame", nil, parent)
+    grip:SetWidth(10)
+    grip:EnableMouse(true)
+    grip:SetFrameLevel((parent:GetFrameLevel() or 1) + 20)
+    local baseW = thumb:GetWidth() or 2
+    if baseW <= 0 then baseW = 2 end
+    local function look(on)
+        thumb:SetWidth(on and baseW * 2 or baseW)
+        setTex(thumb, on and "accent" or (opts.idle or "thumb"))
+    end
+    local function cursorY()
+        local _, y = GetCursorPosition()
+        return y / (grip:GetEffectiveScale() or 1)
+    end
+    local function follow(self, grabFromTop)
+        -- grabFromTop: cursor distance below the thumb's top when it was grabbed.
+        self:SetScript("OnUpdate", function()
+            local top, h, th = grip:GetTop(), grip:GetHeight() or 0, thumb:GetHeight() or 0
+            if not top or h - th <= 0 then return end
+            local f = (top - cursorY() - grabFromTop) / (h - th)
+            opts.set(math.max(0, math.min(1, f)))
+        end)
+    end
+    grip:SetScript("OnMouseDown", function(self, button)
+        if button ~= "LeftButton" or not thumb:IsShown() then return end
+        self.dragging = true
+        look(true)
+        local y, tTop, tBottom = cursorY(), thumb:GetTop(), thumb:GetBottom()
+        if tTop and tBottom and y <= tTop and y >= tBottom then
+            follow(self, tTop - y)  -- grabbed the thumb: keep the grab point under the cursor
+        else
+            follow(self, (thumb:GetHeight() or 0) / 2)  -- the track: jump there, centered
+        end
+    end)
+    local function stop(self)
+        if not self.dragging then return end
+        self.dragging = false
+        self:SetScript("OnUpdate", nil)
+        look(self:IsMouseOver())
+    end
+    grip:SetScript("OnMouseUp", stop)
+    grip:SetScript("OnHide", stop)
+    grip:SetScript("OnEnter", function() look(true) end)
+    grip:SetScript("OnLeave", function(self) if not self.dragging then look(false) end end)
+    if opts.wheel then
+        grip:EnableMouseWheel(true)
+        grip:SetScript("OnMouseWheel", function(_, delta) opts.wheel(delta) end)
+    end
+    function grip:Sync() self:SetShown(thumb:IsShown()) end
+    grip:Hide()
+    return grip
+end
+
+---------------------------------------------------------------------------
 -- Favorite star
 ---------------------------------------------------------------------------
 -- The raid-target "star" icon: shipped by every client since vanilla (chat's {star} uses it),
@@ -1234,14 +1545,15 @@ end
 
 local function menuThumb(m)
     local total = #m.items
-    if total <= m.numVisible then m.thumb:Hide() return end
+    if total <= m.numVisible then m.thumb:Hide(); m.grip:Sync() return end
+    m.grip:Show()
     local trackH = m.numVisible * DD_ITEM_H
     local thumbH = math.max(10, math.floor(trackH * m.numVisible / total + 0.5))
     local maxOff = total - m.numVisible
     local y = (trackH - thumbH) * m.offset / maxOff
     m.thumb:ClearAllPoints()
     m.thumb:SetPoint("TOPRIGHT", m, "TOPRIGHT", -2, -(DD_PAD + math.floor(y + 0.5)))
-    m.thumb:SetSize(2, thumbH)
+    m.thumb:SetHeight(thumbH)  -- width: the grip's (wider while hovered)
     m.thumb:Show()
 end
 
@@ -1369,7 +1681,20 @@ local function getMenu()
 
     m.thumb = m:CreateTexture(nil, "OVERLAY")
     setTex(m.thumb, "thumb")
+    m.thumb:SetWidth(2)
     m.thumb:Hide()
+    local function scrollTo(o)
+        local maxOff = math.max(0, #m.items - m.numVisible)
+        o = math.max(0, math.min(maxOff, math.floor(o + 0.5)))
+        if o ~= m.offset then m.offset = o; fillMenu(m) end
+    end
+    m.grip = Skin:ScrollGrip(m, m.thumb, {
+        get = function() local mo = #m.items - m.numVisible return mo > 0 and m.offset / mo or 0 end,
+        set = function(f) scrollTo(f * (#m.items - m.numVisible)) end,
+        wheel = function(delta) scrollTo(m.offset - delta) end,
+    })
+    m.grip:SetPoint("TOPRIGHT", m, "TOPRIGHT", 0, -DD_PAD)
+    m.grip:SetPoint("BOTTOMRIGHT", m, "BOTTOMRIGHT", 0, DD_PAD)
 
     m.measure = Skin:Text(m, Skin.SIZE.normal, "text")
     m.measure:Hide()
