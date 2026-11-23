@@ -363,8 +363,8 @@ def main() -> int:
     zip_path = package.make_zip(version)
     print(f"\nReleased {version}: {zip_path} ({zip_path.stat().st_size // 1024} KB)")
     print("Changelog entry:\n" + entry)
-    print("Publish it (GitHub Actions uploads to CurseForge when the tag arrives):")
-    print(f'  git add -A && git commit -m "Release {version}" && git tag v{version} && git push && git push origin v{version}')
+    print("Publish it (GitHub Actions uploads a new TOC version to CurseForge when it reaches main):")
+    print(f'  git add -A && git commit -m "Release {version}" && git push')
     return 0
 
 

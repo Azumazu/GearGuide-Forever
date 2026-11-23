@@ -48,10 +48,10 @@ Players get a database that ships with the addon; they never need to scan. Per g
    patch changed (items added, removed, changed). Without `--dry-run` it writes the new `Data.lua`,
    bumps the version, adds a CHANGELOG.md entry and builds `releases/GearGuide-<version>.zip`.
    No item changes means no release (`--sources` also releases newly learned sources).
-4. Commit and push the version tag (release.py prints the exact commands). GitHub Actions
-   (`.github/workflows/release.yml`) checks the tag matches the TOC version, packages the addon,
-   uploads it to CurseForge and attaches the zip to a GitHub release. CurseForge app users get it
-   automatically.
+4. Commit and push to `main`. GitHub Actions (`.github/workflows/release.yml`) sees a TOC version
+   that has no `v<version>` tag yet, packages the addon, uploads it to CurseForge with that
+   version's CHANGELOG.md section, then tags it and attaches the zip to a GitHub release. Pushes
+   that don't change the version publish nothing. CurseForge app users get it automatically.
 
 ### One-time publishing setup
 1. CurseForge: create the project (World of Warcraft, license GPL-3.0) and an API token in your author settings.

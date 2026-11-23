@@ -1,43 +1,65 @@
-# Publishes GearGuide to CurseForge when a version tag (v1.2.3) is pushed.
+# Publishes GearGuide to CurseForge from every push to main that carries a new version.
+# A version is new when GearGuide.toc's version has no "v<version>" tag yet; after the upload the
+# tag and a GitHub release (with the zip) are created, so the same version is never uploaded twice
+# and commits that don't change the version publish nothing.
 # The item database is built locally (release.py needs the game client's scan) and committed;
-# this workflow only packages the committed addon and uploads it.
+# this workflow only packages the committed addon and uploads it, with the version's CHANGELOG.md
+# section as the CurseForge changelog.
 # Repository settings needed: secret CF_API_TOKEN, variable CF_PROJECT_ID.
 name: Release
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
-  contents: write  # attach the zip to a GitHub release
+  contents: write  # create the version tag and the GitHub release
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # tags, to see which versions are published
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Check tag matches the TOC version
+      - name: New version?
+        id: version
         run: |
           toc_version="$(python GearGuideTools/package.py --print-version)"
-          if [ "v${toc_version}" != "${GITHUB_REF_NAME}" ]; then
-            echo "Tag ${GITHUB_REF_NAME} does not match GearGuide.toc version ${toc_version}"; exit 1
+          echo "version=${toc_version}" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v${toc_version}" >/dev/null; then
+            echo "v${toc_version} is already published: nothing to do."
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Publishing v${toc_version}."
+            echo "new=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Package
+        if: steps.version.outputs.new == 'true'
         run: python GearGuideTools/package.py
 
       - name: Upload to CurseForge
+        if: steps.version.outputs.new == 'true'
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CF_PROJECT_ID: ${{ vars.CF_PROJECT_ID }}
         run: python GearGuideTools/upload_curseforge.py
 
-      - name: GitHub release
+      - name: Tag and GitHub release
+        if: steps.version.outputs.new == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
           files: releases/GearGuide-*.zip
