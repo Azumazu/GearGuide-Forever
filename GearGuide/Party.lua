@@ -95,6 +95,17 @@ local function tick()
     end
 end
 
+-- The inspect ticker runs only in a party (raids use master loot, solo has no one to inspect).
+local ticker
+local function updateTicker()
+    local party = IsInGroup and IsInGroup() and not (IsInRaid and IsInRaid())
+    if party and not ticker and C_Timer and C_Timer.NewTicker then
+        ticker = C_Timer.NewTicker(TICK, tick)
+    elseif not party and ticker then
+        ticker:Cancel(); ticker = nil
+    end
+end
+
 ---------------------------------------------------------------------------
 -- What an item is worth to someone: score gain over what they wear in that slot (the weaker one
 -- of two rings/trinkets), nil if they can't use it.
@@ -351,11 +362,12 @@ events:SetScript("OnEvent", function(_, event, arg1)
         local keep = {}
         for _, u in ipairs(partyUnits()) do keep[UnitGUID(u) or ""] = true end
         for guid in pairs(members) do if not keep[guid] then members[guid] = nil end end
+        updateTicker()
     elseif event == "ADDON_LOADED" and arg1 == "Blizzard_InspectUI" then
         addInspectButton()
     elseif event == "PLAYER_LOGIN" then
         addInspectButton()
-        if C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(TICK, tick) end
+        updateTicker()
         if GameTooltip and GameTooltip.SetLootRollItem and hooksecurefunc then
             hooksecurefunc(GameTooltip, "SetLootRollItem", addRollTooltip)
         end

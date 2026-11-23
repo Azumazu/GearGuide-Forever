@@ -311,6 +311,17 @@ local function updateChrome(dt)
     applyOpacity()
 end
 
+-- The mouse-over check only runs in hover mode (otherwise the chrome is always shown: chrome = 1).
+local function syncChromeWatch(f)
+    f = f or frame
+    if not f then return end
+    if GearGuideDB.mini.hoverMode then
+        f:SetScript("OnUpdate", function(_, dt) updateChrome(dt) end)
+    else
+        f:SetScript("OnUpdate", nil)
+    end
+end
+
 local function updateHeader()
     local db = GearGuideDB.mini
     frame.countText:SetText(tostring(db.count))
@@ -438,7 +449,7 @@ local function createFrame()
     grip:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -(HEADER_H + PAD))
     f.grip = grip
 
-    f:SetScript("OnUpdate", function(_, dt) updateChrome(dt) end)
+    syncChromeWatch(f)
     f:SetScale(miniScale())  -- before positioning: the saved offsets are in the frame's scaled units
     ns.Skin:RefreshPixels()
     restorePosition(f)
@@ -614,9 +625,18 @@ local function handlePvP()
     return pvp
 end
 
+-- Where the last zone check ran: walking in and out of buildings (ZONE_CHANGED_INDOORS) usually
+-- keeps the zone, and then there is nothing to check again.
+local lastZone
+local function zoneSignature()
+    local name, mapID, inInstance = ns:CurrentZone()
+    return tostring(name) .. "|" .. tostring(mapID) .. "|" .. tostring(inInstance)
+end
+
 -- Runs (debounced) after zone changes and when combat ends.
 function ns:CheckMiniZone()
     if not ready() then return end
+    lastZone = zoneSignature()
     if handlePvP() then return end  -- no zone view or auto-popup in battlegrounds/arenas
     local shown = frame and frame:IsShown()
     if shown and not autoOpened then
@@ -697,6 +717,7 @@ function ns:SetMiniHoverMode(on)
     if frame then
         if on and not chromeWanted() then chrome = 0 end  -- turning it on away from the tracker: hide now
         applyOpacity()
+        syncChromeWatch()
     end
 end
 
@@ -744,6 +765,7 @@ zoneEvents:SetScript("OnEvent", function(_, event)
         end
         return
     end
+    if event == "ZONE_CHANGED_INDOORS" and ready() and lastZone and zoneSignature() == lastZone then return end
     popupDeferred = false
     -- Hide right away on entering a battleground/arena (no 1s flash after the loading screen);
     -- IsInInstance is already valid at PLAYER_ENTERING_WORLD.

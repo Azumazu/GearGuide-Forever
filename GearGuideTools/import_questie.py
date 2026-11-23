@@ -894,11 +894,59 @@ def drop_other_version(items: dict[int, dict], store: QuestieStore) -> list[int]
     return changed
 
 
+def add_missed_gear(items: dict[int, dict], store: QuestieStore, dump: Path | None) -> int:
+    """Gear Questie knows a source for that the client scan missed (the server didn't answer in time):
+    provisional records (pv = 1), like cmangos_items.py does for raid loot. In game, GearGuide asks the
+    client for each one and lists it only once the client returns its own record (real stats); items
+    the client doesn't know never show. Classic items: name, quality, levels and slot from cmangos
+    (not gear there, or poor quality: left out). WoW: Forever's own items: name and required level from
+    Questie; the client fills in the rest. Returns how many were added."""
+    from build_db import EXCLUDE_NAME, excluded
+    from cmangos_items import ALL_CLASSES, CLASS_BITS, INVTYPE
+    cmangos = {}
+    if dump and dump.exists():
+        from import_cmangos import read_tables
+        cmangos = {r["entry"]: r for r in read_tables(dump, {"item_template"})["item_template"]}
+    added = 0
+    for iid in store.ids("Item"):
+        if iid in items or store.field("Item", iid, 12) not in (2, 4):  # weapons, armor
+            continue
+        if not any(store.field("Item", iid, k) for k in (2, 3, 4, 6, 14)):  # no source: nothing to show
+            continue
+        name = store.name("Item", iid)
+        if not name or EXCLUDE_NAME.search(name):
+            continue
+        row = cmangos.get(iid)
+        if row:
+            eq = INVTYPE.get(row.get("InventoryType") or 0)
+            if not eq:
+                continue  # shirts, tabards, bags...
+            rec = {"n": row.get("name") or name, "q": row.get("Quality"), "il": row.get("ItemLevel"),
+                   "rl": row.get("RequiredLevel") or 0, "eq": eq, "c": row.get("class"),
+                   "sc": row.get("subclass"), "pv": 1}
+            mask = row.get("AllowableClass") or -1
+            if mask > 0 and mask & ALL_CLASSES != ALL_CLASSES:
+                rec["cls"] = [n for bit, n in CLASS_BITS.items() if mask & bit]
+        else:
+            rec = {"n": name, "rl": store.field("Item", iid, 10) or 0, "c": store.field("Item", iid, 12), "pv": 1}
+            sc = store.field("Item", iid, 13)
+            if sc is not None:
+                rec["sc"] = sc
+        if excluded(rec):
+            continue
+        items[iid] = {k: v for k, v in rec.items() if v is not None}
+        added += 1
+    return added
+
+
 def merge_sources(items: dict[int, dict], questie_path: Path, chances: dict | None = None) -> tuple[int, int]:
     """Adds Questie sources to GearGuide items in place. Returns (items with new sources, sources added).
     chances: optional drop chances (import_cmangos.drop_chances), also added to matching known sources."""
     store = QuestieStore(find_toc(questie_path))
     zones = ZoneData(store.dir)
+    missed = add_missed_gear(items, store, (chances or {}).get("dump"))
+    if missed:
+        print(f"Gear the scan missed, from Questie (provisional, confirmed in game): {missed} items")
     touched = added = 0
     for iid, rec in items.items():
         new = item_sources(store, iid, zones, chances)

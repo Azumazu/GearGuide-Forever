@@ -34,7 +34,7 @@ def real_source(s) -> bool:
     return isinstance(s, dict) and isinstance(s.get("n"), str) and s["n"].strip() not in JUNK_NAMES
 # Items in the client's table that players never get: NPC weapons, test, placeholder and retired items.
 EXCLUDE_NAME = re.compile(r"^Monster - |^zz|^OLD|(?i:\btest(?:ing)?\b|qatest)|DELETE ME|Deprecated|DEPRECATED|\[PH\]|\(OLD\)|\bOLD\b|UNUSED|Unused|\bQA\b|DEBUG")
-KEEP_FIELDS = ("n", "q", "il", "rl", "eq", "c", "sc", "st", "cls", "u", "r")  # r = random enchantment
+KEEP_FIELDS = ("n", "q", "il", "rl", "eq", "c", "sc", "st", "cls", "u", "r", "x")  # r = random enchantment, x = mount/toy/recipe
 
 
 class LuaParseError(ValueError):
@@ -257,14 +257,31 @@ def learned_spots(saved: Path) -> tuple[dict, dict]:
     return spots, zones
 
 
+def learned_reps(saved: Path) -> dict[int, list[int]]:
+    """Reputation requirements read from vendor tooltips in game (GearGuideLearned.reps):
+    {item id: [faction id, standing]}, only where the faction ID was known."""
+    data = LuaTableParser(saved.read_text(encoding="utf-8", errors="replace")).assignments()
+    learned = data.get("GearGuideLearned") or {}
+    out = {}
+    for iid, r in as_dict(learned.get("reps")).items():
+        if isinstance(r, dict) and isinstance(r.get("f"), int) and r["f"] > 0 \
+                and isinstance(r.get("s"), int) and 1 <= r["s"] <= 8:
+            out[int(iid)] = [r["f"], r["s"]]
+    return out
+
+
 def apply_spots(items: dict[int, dict], spots: dict, zones: dict) -> int:
-    """Gives creature drop sources without a map location the spots learned in game (pins and
-    areas, like imported locations) and, if they have no zone, the zone name. Returns sources changed."""
+    """Gives creature drop and vendor sources without a map location the spots learned in game
+    (pins and areas, like imported locations) and, if they have no zone, the zone name. Returns
+    sources changed."""
     from import_questie import MAX_LOC_MAPS, MAX_POINTS, _sample, areas
     changed = 0
     for rec in items.values():
         for s in rec.get("src") or []:
-            if not isinstance(s, dict) or s.get("t") != "drop" or s.get("k") == "object" or s.get("loc"):
+            if not isinstance(s, dict):
+                continue
+            placeable = s.get("t") == "drop" and s.get("k") != "object" or s.get("t") == "vendor"
+            if not placeable or s.get("loc"):
                 continue
             name = s.get("n")
             if name in spots:
@@ -305,7 +322,8 @@ def collect(saved: Path, corrections: Path = CORRECTIONS, include_learned: bool 
     scanned = len(items)
     if include_learned:
         for iid, rec in as_dict(learned.get("items")).items():
-            if isinstance(rec, dict) and rec.get("eq") and int(iid) not in items and not excluded(rec, keep_poor):
+            if isinstance(rec, dict) and (rec.get("eq") or rec.get("x")) and int(iid) not in items \
+                    and not excluded(rec, keep_poor):
                 items[int(iid)] = {k: rec[k] for k in KEEP_FIELDS if rec.get(k) not in (None, {}, [])}
         for iid, srcs in as_dict(learned.get("sources")).items():
             if int(iid) in items and isinstance(srcs, list) and srcs:
@@ -336,6 +354,12 @@ def collect(saved: Path, corrections: Path = CORRECTIONS, include_learned: bool 
             print(f"Shared sources from players (reported {MIN_SHARED_REPORTS}+ times): {trusted}")
     credits = None
     if questie:
+        # Mounts and toys (Gear Browser "Additional drops"): added before the source merge so
+        # they get Questie's sources like gear does.
+        from extras import add_extras
+        extra = add_extras(items, questie, (chances or {}).get("dump"))
+        if extra:
+            print(f"Mounts and toy candidates: {extra}")
         from import_questie import merge_sources, questie_version
         touched, added = merge_sources(items, questie, chances)
         questie_ver = questie_version(questie)
@@ -347,6 +371,9 @@ def collect(saved: Path, corrections: Path = CORRECTIONS, include_learned: bool 
     if questie:
         from import_questie import resolve_npc_sources
         resolve_npc_sources(items, questie)
+        from extras import drop_sourceless
+        mounts, toys, recipes = drop_sourceless(items)
+        print(f"With sources: {mounts} mounts, {toys} toy candidates, {recipes} recipes")
     hidden = hide_by_source(items, corrections)
     if hidden:
         print(f"Hidden by source (_hide_sources): {len(hidden)} items")

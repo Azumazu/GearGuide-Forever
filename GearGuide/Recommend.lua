@@ -111,6 +111,7 @@ function ns:GetZonePicks(n)
     local function consider(p)
         if seen[p.id] or self:GetCompletion(p.id, class) == "done" then return end
         seen[p.id] = true
+        p.zoneSource, p.chestOnly = nil, nil  -- picks are shared (cached): drop the last zone's match
         local chest
         for _, s in ipairs(self:GetSources(p.id)) do
             if ns.SourceInZone(s, zoneName, mapID, inInstance) then
@@ -211,11 +212,15 @@ function ns.WeaponTypeAllowed(item, class, specKey, level)
     return item.c == ns.ITEM_CLASS_WEAPON and rule.subclasses[item.sc or -1] == true
 end
 
+local SINGLE = {}  -- group -> { group }: shared, read-only (no new table per item and pass)
 function ns:GroupsForItem(item, setup)
     local hands = HAND_GROUPS[item.eq]
     if hands then return hands[setup] end
     local group = ns.EQUIPLOC_GROUP[item.eq]
-    return group and { group } or nil
+    if not group then return nil end
+    local one = SINGLE[group]
+    if not one then one = { group }; SINGLE[group] = one end
+    return one
 end
 
 -- "Should use", beyond "can use": stats the spec values, and the best armor type.
@@ -247,7 +252,25 @@ end
 
 local MIN_QUALITY = 2  -- Enum.ItemQuality.Uncommon (default; Settings: GearGuideDB.minQuality)
 
+-- One recommendation pass walks the whole item database (~11.7k items), and several places read
+-- it (Recommended tab, mini tracker, zone picks, creature tooltips, gear pop-ups). The result is
+-- cached until something it depends on changes: RequestRefresh (gear, level, spec, settings,
+-- ignore list, new sources, new items) bumps the generation; level/class/spec are checked too.
+-- Callers only read the result (GetZonePicks resets its per-zone fields on each use).
+local recCache, recKey
+local recGen = 0
+function ns:InvalidateRecommendations() recGen = recGen + 1 end
+
+local buildRecommendations
 function ns:BuildRecommendations()
+    local key = recGen .. "|" .. tostring(self:GetPlayerClass()) .. "|" .. tostring(self:GetPlayerSpec())
+        .. "|" .. tostring(UnitLevel("player")) .. "|" .. tostring(self:IsCustomWeights())
+    if recCache and recKey == key then return recCache end
+    recCache, recKey = buildRecommendations(self), key
+    return recCache
+end
+
+function buildRecommendations(self)
     local minQ = tonumber(GearGuideDB.minQuality) or MIN_QUALITY
     local weights, ctx = self:GetScoringContext()
     local level = ctx.level
@@ -258,12 +281,11 @@ function ns:BuildRecommendations()
     local buckets = {}
     for _, id in ipairs(self:AllItemIds()) do
         local item = self:GetItem(id)
-        local groups = self:GroupsForItem(item, setup)
         local eff = ns.EffectiveLevel(item)
         -- Uncommon (green) and better only: common/poor gear is vendor filler, not worth a slot
-        -- in the list (favorites are added separately and still show).
-        if groups and (item.q or 1) >= minQ and eff >= minL and eff <= maxL
-            and not self:IsIgnored(id) and not self:RaidGearTooEarly(item, level)
+        -- in the list (favorites are added separately and still show). Cheap checks first.
+        local groups = (item.q or 1) >= minQ and eff >= minL and eff <= maxL and self:GroupsForItem(item, setup)
+        if groups and not self:IsIgnored(id) and not self:RaidGearTooEarly(item, level)
             and self:ShowsItem(id) and self:IsUsable(item, ctx.class, level)
             and ns.WeaponTypeAllowed(item, ctx.class, ctx.spec, level) then
             local score = self:Score(item, weights, ctx)

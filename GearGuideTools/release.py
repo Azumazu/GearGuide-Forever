@@ -258,7 +258,17 @@ def main() -> int:
             g = (old.get(iid) or {}).get("rg")
             if g in randoms:
                 rec["rg"] = g
-    # Where creatures without a known location were found in game (GearGuideLearned.spots).
+    # Reputation requirements read from vendor tooltips in game (WoW: Forever's own factions, which
+    # the cmangos data doesn't have): only for items without one.
+    from build_db import learned_reps
+    rep_added = 0
+    for iid, rp in learned_reps(saved).items():
+        if iid in items and not items[iid].get("rp"):
+            items[iid]["rp"] = rp
+            rep_added += 1
+    if rep_added:
+        print(f"Reputation requirements learned in game: {rep_added} items")
+    # Where creatures and vendors without a known location were found in game (GearGuideLearned.spots).
     from build_db import apply_spots, learned_spots
     placed = apply_spots(items, *learned_spots(saved))
     if placed:

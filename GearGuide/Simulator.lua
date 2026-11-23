@@ -1479,8 +1479,8 @@ function ns:CreateSimulatorPanel(parent)
                 or "GearGuide has no items for this slot" }
         end
         pCount:SetText(string.format("%d item%s", #items, #items == 1 and "" or "s"))
-        list:SetData(rows)
-        list:SetSelected(isSelectedRow)
+        list:SetSelected(isSelectedRow, true)
+        list:SetData(rows)  -- one redraw with the new rows and selection
         if state.resetScroll then
             state.resetScroll = false
             list:ScrollToTop()
@@ -1843,28 +1843,44 @@ function ns:CreateSimulatorPanel(parent)
     end
 
     -- Live stats change with gear, buffs and level; item data arrives in the background.
-    local pending
+    -- The item list is a scan of the whole database: only gear, level and bag changes redo it.
+    -- Item info arriving (in bursts, from anything in the game) just redraws the visible rows.
+    local pending, needPicker, needModel, needShop = false, false, false, false
     local events = CreateFrame("Frame", nil, panel)
+    local UNIT_EVENTS = { UNIT_STATS = true, UNIT_AURA = true, UNIT_ATTACK_POWER = true, UNIT_RESISTANCES = true }
     for _, e in ipairs({ "PLAYER_EQUIPMENT_CHANGED", "UNIT_STATS", "UNIT_AURA", "PLAYER_LEVEL_UP",
         "GET_ITEM_INFO_RECEIVED", "UNIT_ATTACK_POWER", "UNIT_RESISTANCES", "BAG_UPDATE_DELAYED" }) do
-        pcall(events.RegisterEvent, events, e)
+        if UNIT_EVENTS[e] and events.RegisterUnitEvent then
+            pcall(events.RegisterUnitEvent, events, e, "player")  -- not every unit in a raid
+        else
+            pcall(events.RegisterEvent, events, e)
+        end
     end
     events:SetScript("OnEvent", function(_, event, unit)
         if not panel:IsVisible() then return end
-        if (event == "UNIT_STATS" or event == "UNIT_AURA" or event == "UNIT_ATTACK_POWER"
-            or event == "UNIT_RESISTANCES") and unit ~= "player" then return end
+        if UNIT_EVENTS[event] and unit ~= "player" then return end
+        if event == "GET_ITEM_INFO_RECEIVED" then
+            needModel = needModel or state.missing and true or false
+            needShop = true
+        elseif not UNIT_EVENTS[event] then
+            needPicker, needShop = true, true  -- gear, level, bags (stats and buffs: numbers only)
+        end
         if pending then return end
         pending = true
         local function run()
             pending = false
+            local picker, model, shop = needPicker, needModel, needShop
+            needPicker, needModel, needShop = false, false, false
             if not panel:IsVisible() then return end
             safe("slots", updateSlots)
             safe("stats", updateStats)
-            if event == "GET_ITEM_INFO_RECEIVED" and state.missing then safe("model", function() dressModel(true) end) end
-            if event ~= "UNIT_AURA" then
+            if model then safe("model", function() dressModel(true) end) end
+            if picker then
                 safe("item list", updatePicker)
-                safe("shopping list", updateShop)  -- something looted or bought is off the list
+            elseif shop then
+                safe("item list", function() list:Refresh() end)  -- names and icons that just arrived
             end
+            if shop then safe("shopping list", updateShop) end  -- something looted or bought is off the list
         end
         if C_Timer and C_Timer.After then C_Timer.After(0.2, run) else run() end
     end)

@@ -121,7 +121,7 @@ end
 -- One straight piece of a route or area outline. Lines need Frame:CreateLine (modern clients);
 -- without it they simply aren't drawn and the pins still show.
 local function getLine(i, c)
-    local parent = getOverlay(c)
+    local parent = overlay or getOverlay(c)  -- laid out once per redraw (refreshPins)
     local line = lines[i]
     if not line then
         if not parent.CreateLine then return nil end
@@ -167,7 +167,7 @@ end
 -- onto the triangle (two share a point). Needs Texture:SetVertexOffset (modern clients); without
 -- it areas are only outlined.
 local function getTriangle(i, c)
-    local layer = getOverlay(c)
+    local layer = overlay or getOverlay(c)  -- laid out once per redraw (refreshPins)
     local t = triangles[i]
     if not t then
         t = layer:CreateTexture(nil, "ARTWORK")
@@ -211,14 +211,24 @@ local function drawAreaFills(c, w, h)
     drawn.triangles, drawn.failed = n - failed, failed
 end
 
--- Places pins when the displayed map is the one we want; called on a light timer while the map is open.
+-- Places pins when the displayed map is the one we want; called on a light timer while the map is
+-- open. Redraws only when something changed (another map, zoom, window size, other pins): the
+-- routes and areas are hundreds of lines and triangles.
+local lastDrawn
 local function refreshPins()
     local c = canvas()
-    if not active or not c or not WorldMapFrame:IsShown() then hideAll() return end
-    local mapID = WorldMapFrame.GetMapID and WorldMapFrame:GetMapID()
-    if mapID ~= active.map then hideAll() return end
+    local mapID = active and c and WorldMapFrame:IsShown() and WorldMapFrame.GetMapID and WorldMapFrame:GetMapID()
+    if not active or not mapID or mapID ~= active.map then
+        if lastDrawn ~= "hidden" then hideAll() end  -- once, not on every tick while another map shows
+        lastDrawn = "hidden"
+        return
+    end
     local w, h = c:GetWidth(), c:GetHeight()
     local scale = 1 / canvasScale()  -- keep pins the same size when zooming
+    local key = tostring(active) .. "|" .. tostring(w) .. "|" .. tostring(h) .. "|" .. tostring(scale)
+    if key == lastDrawn then return end
+    lastDrawn = key
+    getOverlay(c)
     local icon = ICONS[active.kind] or ICONS.drop
     drawAreaFills(c, w, h)
     drawRoutes(c, w, h)
@@ -268,9 +278,11 @@ local function pinPoints(loc)
 end
 ns.MapPinPoints = pinPoints  -- (tests)
 
+-- A child of the world map: its OnUpdate only runs while the map is open.
 local function startWatcher()
+    lastDrawn = nil
     if watcher then watcher:Show() return end
-    watcher = CreateFrame("Frame")
+    watcher = CreateFrame("Frame", nil, WorldMapFrame)
     local elapsed = 0
     watcher:SetScript("OnUpdate", function(_, dt)
         elapsed = elapsed + dt

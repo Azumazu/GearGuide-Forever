@@ -10,8 +10,12 @@ local _, ns = ...
 --             and its notices are filtered: nothing appears in chat. Left when sharing is turned
 --             off. If joining fails (all channel slots used, or a client that blocks it), guild and
 --             group sharing still work.
---   Load:     only sources this player saw for the first time, batched, max one message per
---             SEND_INTERVAL, never in combat or instances (Blizzard UI Add-On Policy rule 3).
+--   Load:     only sources nobody has confirmed yet (not in the shipped data, not a world drop,
+--             not already reported by SETTLED_REPORTS players), batched, never in combat or
+--             instances (Blizzard UI Add-On Policy rule 3). Guild/group: max one message per
+--             SEND_INTERVAL. The realm channel is quieter still, since every message reaches every
+--             user on the realm: max one message per CHANNEL_INTERVAL, no re-sharing of old finds
+--             at login, the version at most once a day, and no answers to older versions there.
 --   Received: validated, only for items in our database, capped per sender; stored separately in
 --             GearGuideLearned.shared with a count of distinct senders per session (names are not
 --             stored). Releases ship a shared source only after 3+ reports (build_db.py).
@@ -21,7 +25,11 @@ local _, ns = ...
 --             new version is out. Older versions ignore the entry (it isn't a valid source).
 
 local PREFIX = "GGSRC1"            -- addon message prefix (max 16 chars), versioned
-local SEND_INTERVAL = 10           -- seconds between messages
+local SEND_INTERVAL = 10           -- seconds between guild/group messages
+local CHANNEL_INTERVAL = 60        -- seconds between realm channel messages
+local CHANNEL_MIN_GAP = 20         -- a sender's channel messages closer together than this are ignored
+local VERSION_EVERY = 24 * 3600    -- own version on the realm channel at most once per this long
+local SETTLED_REPORTS = 3          -- shared by this many players: settled (= MIN_SHARED_REPORTS in build_db.py)
 local MAX_MESSAGE = 240            -- addon messages are limited to 255 bytes
 local OUTBOX_LIMIT = 200
 local RECENT_LIMIT = 40            -- own observations re-shared once when joining a group / logging in
@@ -35,12 +43,15 @@ local CODE_TYPE = { d = "drop", q = "quest", v = "vendor", c = "craft" }
 local sendAddon = (C_ChatInfo and C_ChatInfo.SendAddonMessage) or SendAddonMessage
 local registerPrefix = (C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix) or RegisterAddonMessagePrefix
 
-local outbox = {}
+local outbox = {}          -- guild / group
+local chanbox = {}         -- realm channel (new sources only, sent slower)
+local lastChannelSend = -CHANNEL_INTERVAL
+local lastHeard = {}       -- sender -> GetTime() of their last channel message
 local REPLY_COOLDOWN = 300         -- seconds between version answers to older versions
 local lastReply = -REPLY_COOLDOWN
 local heardFrom = {}       -- sourceKey -> { [sender] = true } this session only (not saved)
 local senderCount = {}     -- sender -> entries accepted this session
-local sharedRecentDone = { GUILD = false, GROUP = false, CHANNEL = false }
+local sharedRecentDone = { GUILD = false, GROUP = false }
 local ticker
 
 function ns:IsSharingEnabled()
@@ -95,7 +106,7 @@ local function versionEntry()
 end
 
 local enqueue  -- (defined below)
-local function heardVersion(v)
+local function heardVersion(v, viaChannel)
     local mine = myVersion()
     if not mine or v == mine then return end
     if ns.VersionNewer(v, mine) then
@@ -108,7 +119,8 @@ local function heardVersion(v)
             end
             if ns.RefreshUI then ns:RefreshUI() end
         end
-    elseif ns.VersionNewer(mine, v) and GetTime() - lastReply >= REPLY_COOLDOWN then
+    elseif not viaChannel and ns.VersionNewer(mine, v) and GetTime() - lastReply >= REPLY_COOLDOWN then
+        -- Not on the realm channel: every newer copy there would answer at once.
         lastReply = GetTime()
         enqueue(versionEntry())  -- tell the older copy that a newer one exists
     end
@@ -140,11 +152,9 @@ local function channelIndex()
 end
 ns.ShareChannelIndex = channelIndex
 
--- Targets: "GUILD" / "PARTY" / "RAID", or { "CHANNEL", number } for the hidden channel.
+-- Guild / group targets.
 local function channels()
     local list = {}
-    local chan = channelIndex()
-    if chan > 0 then list[#list + 1] = { "CHANNEL", chan } end
     if IsInGuild and IsInGuild() then list[#list + 1] = "GUILD" end
     if IsInRaid and IsInRaid() then
         list[#list + 1] = "RAID"
@@ -154,41 +164,74 @@ local function channels()
     return list
 end
 
-local function flush()
-    if #outbox == 0 or not canSendNow() or not sendAddon then return end
-    local targets = channels()
-    if #targets == 0 then return end
-    -- Pack as many entries as fit into one message.
+-- Takes as many entries off the front of box as fit into one message.
+local function pack(box)
     local parts, size = {}, 0
-    while #outbox > 0 do
-        local entry = outbox[1]
+    while #box > 0 do
+        local entry = box[1]
         if size + #entry + 1 > MAX_MESSAGE and #parts > 0 then break end
-        table.remove(outbox, 1)
+        table.remove(box, 1)
         parts[#parts + 1] = entry
         size = size + #entry + 1
     end
-    local message = table.concat(parts, ";")
-    for _, channel in ipairs(targets) do
-        if type(channel) == "table" then
-            pcall(sendAddon, PREFIX, message, channel[1], channel[2])
-        else
-            pcall(sendAddon, PREFIX, message, channel)
+    return table.concat(parts, ";")
+end
+
+local function flush()
+    if (#outbox == 0 and #chanbox == 0) or not canSendNow() or not sendAddon then return end
+    if #outbox > 0 then
+        local targets = channels()
+        if #targets > 0 then
+            local message = pack(outbox)
+            for _, channel in ipairs(targets) do pcall(sendAddon, PREFIX, message, channel) end
         end
+    end
+    local chan = #chanbox > 0 and channelIndex() or 0
+    if chan > 0 and GetTime() - lastChannelSend >= CHANNEL_INTERVAL then
+        lastChannelSend = GetTime()
+        pcall(sendAddon, PREFIX, pack(chanbox), "CHANNEL", chan)
     end
 end
 
-function enqueue(entry)
+local function addTo(box, entry)
     if not entry then return end
-    for _, e in ipairs(outbox) do if e == entry then return end end
-    if #outbox >= OUTBOX_LIMIT then table.remove(outbox, 1) end
-    outbox[#outbox + 1] = entry
+    for _, e in ipairs(box) do if e == entry then return end end
+    if #box >= OUTBOX_LIMIT then table.remove(box, 1) end
+    box[#box + 1] = entry
 end
 
--- Called by Sources.lua when this player sees a source for the first time.
-function ns:QueueShare(id, src)
-    if not self:IsSharingEnabled() or not id or not src or src.shared then return end
+function enqueue(entry) addTo(outbox, entry) end
+
+-- Is a source settled: in the shipped data, a world drop, or already reported by enough
+-- players? Those aren't shared: everyone has them. Reads the three stores directly (no
+-- GetSources copies, nothing allocated).
+function ns:IsSettledSource(id, src)
+    if src.t == "drop" and self.WorldDropsOf then
+        local world = self:WorldDropsOf(src.n)
+        if world and world[id] then return true end
+    end
+    local dbItem = GearGuide_Data and GearGuide_Data.items[id]
+    if dbItem and dbItem.src then
+        local pool = GearGuide_Data.sources
+        for _, s in ipairs(dbItem.src) do
+            if type(s) == "number" then s = pool and pool[s] end
+            if type(s) == "table" and s.t == src.t and s.n == src.n then return true end
+        end
+    end
+    local shared = GearGuideLearned.shared and GearGuideLearned.shared[id]
+    for _, s in ipairs(shared or {}) do
+        if s.t == src.t and s.n == src.n and (s.c or 1) >= SETTLED_REPORTS then return true end
+    end
+    return false
+end
+
+-- Called by Sources.lua when this player sees a source for the first time; settled = known
+-- already (IsSettledSource).
+function ns:QueueShare(id, src, settled)
+    if not self:IsSharingEnabled() or not id or not src or src.shared or settled then return end
     local entry = encode(id, src)
     enqueue(entry)
+    addTo(chanbox, entry)
     local recent = GearGuideLearned.recentShared
     recent[#recent + 1] = entry
     while #recent > RECENT_LIMIT do table.remove(recent, 1) end
@@ -212,12 +255,17 @@ local function isSelf(sender)
     return short == me
 end
 
-local function receive(message, sender)
+local function receive(message, sender, viaChannel)
     if not ns:IsSharingEnabled() or isSelf(sender) or #message > 255 then return end
+    if viaChannel then  -- a copy sending faster than CHANNEL_INTERVAL allows is flooding: skip
+        local now = GetTime()
+        if lastHeard[sender] and now - lastHeard[sender] < CHANNEL_MIN_GAP then return end
+        lastHeard[sender] = now
+    end
     local accepted = senderCount[sender] or 0
     for entry in message:gmatch("[^;]+") do
         local v = entry:match("^V%^(%d+%.%d+%.%d+)$")
-        if v then heardVersion(v) end
+        if v then heardVersion(v, viaChannel) end
         if accepted >= MAX_PER_SENDER then break end
         local id, src = decode(entry)
         if id and ns:GetItem(id) then  -- only items we know: no junk IDs from strangers
@@ -234,9 +282,10 @@ local function receive(message, sender)
                 end
                 if found then
                     found.c = math.min((found.c or 1) + 1, 99)
+                    ns:InvalidateSourcesCache()  -- "(shared by N players)" in source lines
                 elseif #list < 12 and not (ns.IsJunkSourceName and ns.IsJunkSourceName(src.n)) then
                     list[#list + 1] = { t = src.t, n = src.n, z = src.z, c = 1 }
-                    ns:RequestRefresh()  -- a first source can make the item listable
+                    ns:InvalidateSourceIndexes()  -- a first source can make the item listable
                 end
             end
         end
@@ -273,13 +322,16 @@ local function joinChannel()
     if channelIndex() == 0 then pcall(JoinTemporaryChannel, CHANNEL_NAME) end
     C_Timer.After(3, function()
         hideChannel()
-        if channelIndex() > 0 then shareRecent("CHANNEL") end
+        local now = time and time() or 0
+        if channelIndex() > 0 and now - (GearGuideDB.channelVersionAt or 0) >= VERSION_EVERY then
+            GearGuideDB.channelVersionAt = now
+            addTo(chanbox, versionEntry())
+        end
     end)
 end
 
 local function leaveChannel()
     if channelIndex() > 0 and LeaveChannelByName then pcall(LeaveChannelByName, CHANNEL_NAME) end
-    sharedRecentDone.CHANNEL = false
 end
 
 -- Chat filter: hides "Joined Channel: GearGuideShare" and the channel's other notices.
@@ -297,7 +349,7 @@ end
 ---------------------------------------------------------------------------
 function ns:SetSharing(on)
     GearGuideDB.sharing = on and true or false
-    if on then joinChannel() else wipe(outbox); leaveChannel() end
+    if on then joinChannel() else wipe(outbox); wipe(chanbox); leaveChannel() end
     ns.Print(on and "Source sharing is on: new item sources you find are shared with GearGuide users on your realm, "
         .. "in your guild and in your group."
         or "Source sharing is off: GearGuide no longer sends or receives item sources.")
@@ -322,12 +374,12 @@ function ns:StartComm()
     for _, e in ipairs({ "CHAT_MSG_ADDON", "GROUP_ROSTER_UPDATE", "PLAYER_GUILD_UPDATE" }) do
         pcall(f.RegisterEvent, f, e)
     end
-    f:SetScript("OnEvent", function(_, event, prefix, message, _, sender)
+    f:SetScript("OnEvent", function(_, event, prefix, message, kind, sender)
         if event == "CHAT_MSG_ADDON" then
             -- Secret (client-protected) values can't be used as keys or parsed: skip those messages.
             prefix, message, sender = ns.Plain(prefix), ns.Plain(message), ns.Plain(sender)
             if prefix == PREFIX and type(message) == "string" and type(sender) == "string" then
-                receive(message, sender)
+                receive(message, sender, ns.Plain(kind) == "CHANNEL")
             end
         elseif event == "GROUP_ROSTER_UPDATE" then
             if IsInGroup and IsInGroup() then shareRecent("GROUP") else sharedRecentDone.GROUP = false end

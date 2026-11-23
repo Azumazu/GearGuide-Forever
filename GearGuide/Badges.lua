@@ -14,6 +14,7 @@ local MIN_GAIN = 0.05
 local badges = setmetatable({}, { __mode = "k" })  -- button -> badge frame (never fields on Blizzard frames)
 local shown = setmetatable({}, { __mode = "k" })   -- button -> link it shows a badge for
 local cache = {}                                    -- link -> gain or false
+local uncached = {}                                 -- links scored false only because the item wasn't loaded
 Badges.badges, Badges.cache = badges, cache          -- (tests)
 
 local function enabled()
@@ -45,6 +46,7 @@ function Badges.GainFor(link)
         v = false
         local id = ns.LinkToId(link)
         local item = id and ns.Party.ItemFor(link)
+        if not item then uncached[key] = true end  -- may be gear once its info arrives
         if item and item.eq and ns.EQUIPLOC_GROUP[item.eq] and not ns:IsIgnored(id)
             and not (IsEquippedItem and IsEquippedItem(id)) then
             local gain = ns.Party.MyGain(link, item)
@@ -122,9 +124,18 @@ end
 -- Gear, level, spec or weights changed: forget the gains and redraw the badges on screen.
 function Badges.Invalidate()
     for k in pairs(cache) do cache[k] = nil end
+    wipe(uncached)
     for button, link in pairs(shown) do Badges.Update(button, link) end
 end
-function ns:InvalidateBadges() Badges.Invalidate() end
+-- Bursts (a gear set swap fires PLAYER_EQUIPMENT_CHANGED once per slot) collapse into one redraw.
+local invalidatePending = false
+local function scheduleInvalidate()
+    if not (C_Timer and C_Timer.After) then Badges.Invalidate() return end
+    if invalidatePending then return end
+    invalidatePending = true
+    C_Timer.After(0.1, function() invalidatePending = false; Badges.Invalidate() end)
+end
+function ns:InvalidateBadges() scheduleInvalidate() end
 
 -- Settings toggle: hide everything at once (bags redraw their own badges when shown again).
 function Badges.SetEnabled(on)
@@ -273,7 +284,9 @@ Badges.queueScan = queueScan  -- (tests)
 local function install()
     -- Picking a quest in any quest log goes through the game's SelectQuestLogEntry.
     if hooksecurefunc and type(SelectQuestLogEntry) == "function" then
-        hooksecurefunc("SelectQuestLogEntry", queueScan)
+        hooksecurefunc("SelectQuestLogEntry", function()
+            if not ns.scanningQuestLog then queueScan() end  -- not GearGuide's own quest log reading
+        end)
     end
     if hooksecurefunc and type(QuestInfo_Display) == "function" then
         hooksecurefunc("QuestInfo_Display", queueScan)
@@ -310,13 +323,13 @@ events:SetScript("OnEvent", function(_, event)
         queueScan()  -- clears the NPC quest's badges (and keeps the quest log's)
     elseif event == "GET_ITEM_INFO_RECEIVED" then
         -- Only uncached items scored as "not gear" (false) could change; keep known gains.
-        for k, v in pairs(cache) do if v == false then cache[k] = nil end end
+        for k in pairs(uncached) do cache[k] = nil; uncached[k] = nil end
         -- A reward's info arriving late: look again, only shortly after a quest was shown.
         if rewardsPending and ((GetTime and GetTime()) or 0) - lastQuestShown < 5 then queueScan(true) end
     elseif event == "PLAYER_LEVEL_UP" and C_Timer and C_Timer.After then
         C_Timer.After(0.5, Badges.Invalidate)  -- UnitLevel catches up a moment after the event
     else
-        Badges.Invalidate()
+        scheduleInvalidate()
     end
 end)
 

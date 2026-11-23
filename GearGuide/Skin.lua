@@ -1180,9 +1180,10 @@ function Skin:List(parent, opts)
 
     function list:GetData() return self.data end
 
-    function list:SetSelected(fn)
+    -- quiet: don't redraw (SetData right after does; saves a second pass over the rows)
+    function list:SetSelected(fn, quiet)
         self.selectFn = fn
-        self:Refresh()
+        if not quiet then self:Refresh() end
     end
 
     function list:ScrollToIndex(i)
@@ -1817,9 +1818,14 @@ end
 -- Skin:MenuButton(parent, glyph, size, opts) -> icon button that opens the shared menu with
 -- opts.getItems() (same item format as Dropdown; use checked/header/keepOpen) and calls
 -- opts.onSelect(value, item). opts.tooltip = { "Title", "line" } is shown while the menu is closed.
+-- opts.width: a text button of that width (label = glyph) instead of a square icon button.
 function Skin:MenuButton(parent, glyph, size, opts)
     local b = self:IconButton(parent, glyph, size)
     b.opts = opts or {}
+    if b.opts.width then
+        b:SetWidth(b.opts.width)
+        applyFont(b.text, Skin.SIZE.normal)
+    end
     b.hovered = false
     function b:IsOpen()
         return ddMenu ~= nil and ddMenu:IsShown() and ddMenu.owner == self or false

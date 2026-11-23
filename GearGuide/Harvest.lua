@@ -355,7 +355,7 @@ function ns:VerifyProvisional()
         elseif store(id) and GearGuideHarvest.items[id] then
             confirmed = confirmed + 1
             pos = pos + 1
-            if confirmed % 25 == 0 then ns:InvalidateItems() end
+            if confirmed % 100 == 0 then ns:InvalidateItems() end  -- and once at the end
         else
             tries[id] = (tries[id] or 0) + 1
             if requestLoad then requestLoad(id) end

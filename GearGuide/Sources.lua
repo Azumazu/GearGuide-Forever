@@ -14,6 +14,14 @@ function ns.IsJunkSourceName(n)
     return type(n) ~= "string" or JUNK_NAMES[n] or (UNKNOWNOBJECT and n == UNKNOWNOBJECT) or false
 end
 
+-- Already among the player's own finds? (Checked first: most loot repeats what's known.)
+local function hasOwnSource(id, src)
+    for _, s in ipairs(GearGuideLearned.sources[id] or {}) do
+        if s.t == src.t and s.n == src.n and s.z == src.z then return true end
+    end
+    return false
+end
+
 local function addSource(id, src)
     if ns.IsJunkSourceName(src.n) then return false end
     local list = GearGuideLearned.sources[id]
@@ -31,13 +39,36 @@ local function addSource(id, src)
     return false
 end
 
+-- A mount, toy or recipe (Gear Browser "Additional drops"): "m", "t", "r", or nil.
+local function extraKindOf(id, instant)
+    local _, _, _, _, _, classID, subclassID = instant(id)
+    if classID == 9 and (subclassID or 0) > 0 then return "r" end   -- recipes (not class books)
+    if classID == 15 and subclassID == 5 then return "m" end
+    if C_ToyBox and C_ToyBox.GetToyInfo then
+        local ok, toy = pcall(C_ToyBox.GetToyInfo, id)
+        if ok and toy then return "t" end
+    end
+end
+
 function ns:LearnLink(link, src)
     local id = ns.LinkToId(link)
     if not id then return end
     local item = self:GetItem(id)
+    local instant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+    local kind = not item and instant and extraKindOf(id, instant)
+    if kind then
+        -- Not in the database yet: a small record, the client knows the rest.
+        local name, _, quality, _, reqLevel = ns.GetItemInfo(id)
+        if not name then
+            pending[id] = { link = link, src = src }  -- retried on GET_ITEM_INFO_RECEIVED
+            return
+        end
+        item = { n = name, q = quality, rl = (reqLevel or 0) > 0 and reqLevel or nil, x = kind }
+        GearGuideLearned.items[id] = item
+        self:InvalidateItems()
+    end
     if not item then
         -- Not gear (cloth, potions...): stop before the full record and tooltip scan.
-        local instant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
         local equip = instant and select(4, instant(id))
         if equip ~= nil and not ns.EQUIPLOC_GROUP[equip] then return end
         -- The base item (no random bonus): a looted "...of the Falcon" link would store that
@@ -53,12 +84,16 @@ function ns:LearnLink(link, src)
     end
     -- A random variant ("...of the Falcon") is credited to the base item; its bonus is remembered.
     self:RememberVariant(id, self:LinkVariant(link))
+    if not src or hasOwnSource(id, src) then return end  -- known: skip the source list lookups below
     -- A creature nobody listed yet for this item (shipped data, own or shared finds): announce it.
     local fresh = src and src.t == "drop" and src.n and src.n ~= "Container" and not self:ListsDropper(id, src.n)
     if not (src and addSource(id, src)) then return end
     if src.t == "drop" and ns.InvalidateSpotNames then ns:InvalidateSpotNames() end
-    if ns.QueueShare then ns:QueueShare(id, src) end  -- share first-time sightings (unless opted out)
-    if self.RequestRefresh then self:RequestRefresh() end  -- an item's first source can make it listable
+    if ns.QueueShare and self:IsSharingEnabled() then
+        -- Not shared when everyone knows it already (shipped data, world drop, enough reports).
+        ns:QueueShare(id, src, self:IsSettledSource(id, src))
+    end
+    self:InvalidateSourceIndexes()  -- an item's first source can make it listable
     -- Only if it's really listed now (GetSources hides misattributed drops from known loot tables).
     if fresh and self:ListsDropper(id, src.n) then self:AnnounceNewDrop(id, link) end
 end
@@ -95,6 +130,12 @@ end
 -- a small GUID -> name cache filled from units the player targets or mouses over.
 ---------------------------------------------------------------------------
 local nameByGUID, levelByGUID, nameCount = {}, {}, 0
+-- By creature type (the NPC ID in the GUID): a name seen once for any Krol'dok Brute names the
+-- loot of every Krol'dok Brute, also ones never targeted. Session only.
+local nameByNpc, levelByNpc = {}, {}
+local function npcOf(guid)
+    return type(guid) == "string" and guid:match("^%a+%-%d+%-%d+%-%d+%-%d+%-(%d+)") or nil
+end
 local Plain = ns.Plain  -- secret values (GUIDs/names the client protects) become nil
 
 local function rememberUnit(unit)
@@ -107,10 +148,13 @@ local function rememberUnit(unit)
     nameByGUID[guid] = name
     levelByGUID[guid] = Plain(UnitLevel and UnitLevel(unit))
     nameCount = nameCount + 1
+    local npc = npcOf(guid)
+    if npc then nameByNpc[npc], levelByNpc[npc] = name, levelByGUID[guid] end
 end
 
 -- Who dropped the item in this loot slot: name and level (nil level = unknown or a boss), or nil
--- when it can't be told. Loot from a bag, box or other container item, fishing or anything else
+-- when it can't be told. Third value true: it was a creature (or the client hid what it was),
+-- only its name is unknown; inside a dungeon the dungeon itself is then credited. Loot from a bag, box or other container item, fishing or anything else
 -- that isn't a creature or chest is not learned: naming it after the creature that happens to be
 -- targeted credited raid gear in a container to the last Stonetusk Boar killed.
 local function lootSource(slot)
@@ -122,11 +166,15 @@ local function lootSource(slot)
             if kind ~= "Creature" and kind ~= "Vehicle" then return nil end
             if nameByGUID[guid] then return nameByGUID[guid], levelByGUID[guid] end
             if Plain(UnitGUID("target")) == guid then  -- the very creature, not just any dead target
-                return Plain(UnitName("target")), Plain(UnitLevel("target"))
+                local name = Plain(UnitName("target"))
+                if name then return name, Plain(UnitLevel("target")) end
             end
-            return nil
+            local npc = npcOf(guid)
+            if npc and nameByNpc[npc] then return nameByNpc[npc], levelByNpc[npc] end
+            return nil, nil, true
         end
-        return nil  -- the client didn't say where this loot came from: don't guess
+        -- The client didn't say (or hid it: dungeons can hide unit data): don't guess a creature.
+        return nil, nil, GetLootSourceInfo(slot) ~= nil
     end
     -- Clients without GetLootSourceInfo: the dead creature being targeted is the best guess.
     if Plain(UnitExists("target")) and Plain(UnitIsDead("target")) then
@@ -157,24 +205,26 @@ local SPOTS_PER_MAP = 30
 local SPOT_MIN_GAP = 1.5      -- map % between kept spots of the same creature
 local wantedNames             -- creature names that drop gear and have no map location
 
-function ns:InvalidateSpotNames() wantedNames = nil end
+function ns:InvalidateSpotNames() wantedNames = nil; ns:InvalidateSourcesCache() end
 
 local function buildWanted()
     wantedNames = {}
     local pool = GearGuide_Data and GearGuide_Data.sources or {}
+    -- Creatures that drop gear and vendors that sell it (WoW: Forever's quartermasters).
+    local function placeable(s)
+        return type(s) == "table" and s.n and (s.t == "drop" and s.k ~= "object" or s.t == "vendor")
+    end
     for _, s in pairs(pool) do
-        if type(s) == "table" and s.t == "drop" and s.k ~= "object" and not s.l and not s.loc and s.n then
-            wantedNames[s.n] = true
-        end
+        if placeable(s) and not s.l and not s.loc then wantedNames[s.n] = true end
     end
     for _, list in pairs(GearGuideLearned.sources or {}) do
         for _, s in ipairs(list) do
-            if s.t == "drop" and s.n and s.n ~= "Container" then wantedNames[s.n] = true end
+            if placeable(s) and s.n ~= "Container" then wantedNames[s.n] = true end
         end
     end
     -- Names that do have a shipped location don't need spots (learned sources may repeat them).
     for _, s in pairs(pool) do
-        if type(s) == "table" and s.t == "drop" and s.l and s.n then wantedNames[s.n] = nil end
+        if placeable(s) and s.l then wantedNames[s.n] = nil end
     end
 end
 
@@ -205,6 +255,7 @@ local function recordSpot(name)
     for i = 1, #list - 1, 2 do
         if math.abs(list[i] - x) < SPOT_MIN_GAP and math.abs(list[i + 1] - y) < SPOT_MIN_GAP then return end
     end
+    ns:InvalidateSourcesCache()  -- a new spot: map locations in source lists change
     list[#list + 1], list[#list + 2] = x, y
 end
 ns.RecordCreatureSpot = recordSpot  -- (tests)
@@ -260,22 +311,59 @@ local function rememberInstanceZone(z)
 end
 ns.RememberInstanceZone = rememberInstanceZone  -- (tests)
 
+-- Inside a party/raid dungeon: its name, else nil.
+local function dungeonName()
+    if not IsInInstance then return nil end
+    local inside, kind = IsInInstance()
+    inside, kind = Plain(inside), Plain(kind)
+    if not inside or (kind ~= "party" and kind ~= "raid") then return nil end
+    local z = zone()
+    return z ~= "" and z or nil
+end
+
+-- Loot whose creature can't be named, from inside a dungeon: credited to the dungeon itself
+-- ("Drop: Krol'dok Stronghold"), so it is listed with the dungeon's loot and shared. Not when a
+-- named creature of this dungeon is already known for the item (that's the better source).
+function ns:LearnDungeonDrop(link, dungeon)
+    local id = ns.LinkToId(link)
+    if not id or not dungeon then return end
+    for _, list in ipairs({ GearGuideLearned.sources[id] or {}, ns:GetSources(id) }) do
+        for _, s in ipairs(list) do
+            if s.t == "drop" and ns.ZoneName(s.z) == dungeon then return end
+        end
+    end
+    ns:LearnLink(link, { t = "drop", n = dungeon, z = dungeon })
+end
+
+local readyCount  -- slots read at LOOT_READY; LOOT_OPENED for the same window then has nothing new
 local function onLootOpened(event)
+    local slots = GetNumLootItems() or 0
+    if event == "LOOT_OPENED" then
+        local done = readyCount and readyCount > 0 and readyCount == slots
+        readyCount = nil
+        if done then return end
+    else
+        readyCount = slots
+    end
     local z = zone()
     rememberInstanceZone(z)
+    local dungeon = dungeonName()
     local spotted = {}
     local n = GetNumLootItems()
     if ns.lootTrace then ns.Print(string.format("%s: %s slot(s)", event or "loot", show(n))) end
     for i = 1, n do
         local rawLink = GetLootSlotLink(i)
         local link = Plain(rawLink)
-        local name, level = lootSource(i)
+        local name, level, creature = lootSource(i)
         if ns.lootTrace then
             local ok, err = pcall(traceLoot, i, rawLink, name, level)
             if not ok then ns.Print(string.format("loot %d: trace failed (%s)", i, tostring(err))) end
         end
         if link and name and plausibleDrop(link, level) then
             ns:LearnLink(link, { t = "drop", n = name, z = z })
+        elseif link and not name and creature and dungeon then
+            if ns.lootTrace then ns.Print(string.format("loot %d: creature unknown, credited to %s", i, dungeon)) end
+            ns:LearnDungeonDrop(link, dungeon)
         end
         if name and name ~= "Container" and not spotted[name] then
             spotted[name] = true
@@ -304,7 +392,8 @@ local function scanQuestLog()
         return
     end
     local previous = GetQuestLogSelection and GetQuestLogSelection() or 0
-    local header = ""
+    local header, selected = "", false
+    ns.scanningQuestLog = true  -- our own SelectQuestLogEntry calls: Badges' hook ignores them
     for i = 1, (GetNumQuestLogEntries() or 0) do
         local title, _, _, isHeader = GetQuestLogTitle(i)
         if isHeader then
@@ -312,6 +401,7 @@ local function scanQuestLog()
         elseif title and not questLogScanned[title] then
             questLogScanned[title] = true
             SelectQuestLogEntry(i)
+            selected = true
             local src = { t = "quest", n = title, z = header }
             for j = 1, (GetNumQuestLogChoices and GetNumQuestLogChoices() or 0) do
                 local link = GetQuestLogItemLink("choice", j)
@@ -323,7 +413,10 @@ local function scanQuestLog()
             end
         end
     end
-    SelectQuestLogEntry(previous)  -- put the player's quest log selection back
+    -- Put the player's quest log selection back, only if a new quest was read (each quest is read
+    -- once per session: most scans read nothing and touch nothing).
+    if selected then SelectQuestLogEntry(previous) end
+    ns.scanningQuestLog = false
 end
 
 local questLogTimer
@@ -385,6 +478,44 @@ local function merchantCosts(i)
 end
 
 -- Remembers what this vendor charges for the item (latest visit wins).
+-- "Requires Nightclaw Druids - Revered" on a vendor's item: WoW: Forever's factions aren't in the
+-- build's reputation data, so it is read here. GearGuideLearned.reps[itemID] = { n = faction
+-- name, s = standing (5 Friendly ... 8 Exalted), f = faction ID when the player has met it }.
+local repPattern
+local function readRep(i, link)
+    if not repPattern then
+        local fmt = ITEM_REQ_REPUTATION or "Requires %s - %s"
+        repPattern = "^" .. fmt:gsub("([%^%$%(%)%.%[%]%*%+%-%?])", "%%%1"):gsub("%%s", "(.+)") .. "$"
+    end
+    local data
+    if C_TooltipInfo then
+        local ok, d = pcall(C_TooltipInfo.GetMerchantItem or C_TooltipInfo.GetHyperlink,
+            C_TooltipInfo.GetMerchantItem and i or link)
+        data = ok and d or nil
+    end
+    for _, line in ipairs(type(data) == "table" and data.lines or {}) do
+        local text = Plain(line.leftText)
+        if type(text) == "string" then
+            local faction, standing = text:match(repPattern)  -- (not "a and f()": that keeps one value)
+            local s = standing and ns.StandingFromName(standing)
+            if s then return faction, s end
+        end
+    end
+end
+
+local function learnRep(id, i, link)
+    local faction, standing = readRep(i, link)
+    if not faction then return end
+    GearGuideLearned.reps = GearGuideLearned.reps or {}
+    local old = GearGuideLearned.reps[id]
+    local fid = ns.FactionIdByName(faction)
+    if not (old and old.n == faction and old.s == standing and (old.f or not fid)) then
+        GearGuideLearned.reps[id] = { n = faction, s = standing, f = fid }
+    end
+end
+
+local MAX_PRICE_VENDORS = 8  -- vendor prices kept per item
+local pricesChanged = false
 local function learnPrice(id, vendor, i)
     local okP, price, extended = pcall(merchantPrice, i)
     local okC, costs = true, nil
@@ -392,22 +523,37 @@ local function learnPrice(id, vendor, i)
     if not okP then price = nil end
     if not okC then costs = nil end
     if not ((price or 0) > 0 or costs) then return end
-    GearGuideLearned.prices[id] = GearGuideLearned.prices[id] or {}
-    GearGuideLearned.prices[id][vendor] = { g = (price or 0) > 0 and price or nil, c = costs }
+    local byVendor = GearGuideLearned.prices[id] or {}
+    GearGuideLearned.prices[id] = byVendor
+    if not byVendor[vendor] then
+        local n = 0
+        for _ in pairs(byVendor) do n = n + 1 end
+        if n >= MAX_PRICE_VENDORS then return end  -- the same item at every vendor: a few are enough
+    end
+    byVendor[vendor] = { g = (price or 0) > 0 and price or nil, c = costs }
+    pricesChanged = true
 end
 
 local function onMerchantShow()
     local vendor = Plain(UnitName("npc")) or "?"
     local z = zone()
+    local sellsGear = false
     for i = 1, (GetMerchantNumItems() or 0) do
         local link = GetMerchantItemLink(i)
         if link then
             ns:LearnLink(link, { t = "vendor", n = vendor, z = z })  -- own table per item
             -- Gear only; the instant lookup knows the slot even before the item is cached.
             local id, _, _, equipLoc = getInstant(link)
-            if id and ns.EQUIPLOC_GROUP[equipLoc] then learnPrice(id, vendor, i) end
+            if id and ns.EQUIPLOC_GROUP[equipLoc] then
+                learnPrice(id, vendor, i)
+                pcall(learnRep, id, i, link)
+                sellsGear = true
+            end
         end
     end
+    -- A vendor of gear without a known location: the player stands next to it (map pin).
+    if sellsGear then recordSpot(vendor) end
+    if pricesChanged then pricesChanged = false; ns:InvalidateSourcesCache() end  -- prices show in source lines
 end
 
 local function onTradeSkillShow()
@@ -427,11 +573,39 @@ local function safeRegister(frame, event)
     pcall(frame.RegisterEvent, frame, event)  -- not every client has every event
 end
 
+-- Loot the party gets that this player may never see in a loot window: items up for a roll, and
+-- "<name> receives loot: [item]" lines. Neither says which creature dropped it, so only inside a
+-- dungeon, credited to the dungeon (LearnDungeonDrop). Chat can be hidden from addons in
+-- dungeons; then only rolls count.
+local LOOT_LINE = "|Hitem:[%-%d:]+|h"
+local function onPartyLoot(link)
+    local dungeon = dungeonName()
+    if not dungeon or not link then return end
+    rememberInstanceZone(dungeon)
+    local id, _, _, equipLoc = (C_Item and C_Item.GetItemInfoInstant or GetItemInfoInstant or function() end)(link)
+    if id and equipLoc and equipLoc ~= "" and not ns.EQUIPLOC_GROUP[equipLoc] then return end  -- not gear
+    if ns.lootTrace then ns.Print("party loot: " .. tostring(link) .. " -> " .. dungeon) end
+    ns:LearnDungeonDrop(link, dungeon)
+end
+
+local function onLootChat(msg)
+    msg = Plain(msg)
+    if type(msg) ~= "string" then return end
+    local link = msg:match("(|c%x+" .. LOOT_LINE .. "%[.-%]|h|r)") or msg:match("(" .. LOOT_LINE .. "%[.-%]|h)")
+    if link then onPartyLoot(link) end
+end
+
+local function onLootRoll(rollID)
+    local link = Plain(GetLootRollItemLink and GetLootRollItemLink(rollID))
+    if link then onPartyLoot(link) end
+end
+
+local tradeTimer
 function ns:EnableLearning()
     local f = CreateFrame("Frame")
     -- LOOT_READY comes first: with auto loot the items can already be gone by LOOT_OPENED.
-    -- Reading both is harmless (addSource skips what's already learned).
-    for _, e in ipairs({ "LOOT_READY", "LOOT_OPENED", "QUEST_DETAIL", "QUEST_COMPLETE", "MERCHANT_SHOW",
+    -- LOOT_OPENED is skipped when LOOT_READY already read the same slots.
+    for _, e in ipairs({ "LOOT_READY", "LOOT_OPENED", "LOOT_CLOSED", "START_LOOT_ROLL", "CHAT_MSG_LOOT", "QUEST_DETAIL", "QUEST_COMPLETE", "MERCHANT_SHOW",
         "GET_ITEM_INFO_RECEIVED", "QUEST_LOG_UPDATE", "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE",
         "PLAYER_TARGET_CHANGED", "UPDATE_MOUSEOVER_UNIT", "NAME_PLATE_UNIT_ADDED" }) do
         safeRegister(f, e)
@@ -439,14 +613,27 @@ function ns:EnableLearning()
     f:SetScript("OnEvent", function(_, event, arg1)
         if event == "LOOT_READY" or event == "LOOT_OPENED" then
             onLootOpened(event)
+        elseif event == "LOOT_CLOSED" then
+            readyCount = nil
+        elseif event == "START_LOOT_ROLL" then
+            local rollID = arg1
+            if C_Timer and C_Timer.After then C_Timer.After(0, function() pcall(onLootRoll, rollID) end)
+            else pcall(onLootRoll, rollID) end
+        elseif event == "CHAT_MSG_LOOT" then
+            pcall(onLootChat, arg1)
         elseif event == "QUEST_DETAIL" or event == "QUEST_COMPLETE" then
             onQuestRewards()
         elseif event == "QUEST_LOG_UPDATE" then
             scheduleQuestLogScan()
         elseif event == "MERCHANT_SHOW" then
             onMerchantShow()
-        elseif event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_UPDATE" then
+        elseif event == "TRADE_SKILL_SHOW" then
             onTradeSkillShow()
+        elseif event == "TRADE_SKILL_UPDATE" then
+            -- Fires on every craft and list change: read the window once things settle.
+            if not tradeTimer then
+                tradeTimer = C_Timer.NewTimer(1, function() tradeTimer = nil; onTradeSkillShow() end)
+            end
         -- Name cache for loot sources: optional enrichment, so it may never raise errors
         -- (these events fire constantly; a client-side restriction must not spam the error frame).
         elseif event == "PLAYER_TARGET_CHANGED" then

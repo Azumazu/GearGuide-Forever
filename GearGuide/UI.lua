@@ -414,8 +414,22 @@ local function fillRow(row, d)
     end
     applyColumns(row, row:GetWidth())
     row.flash:SetAlpha(0)
-    row.star:SetShown(d.kind == "item")
-    if d.kind == "item" then
+    row.star:SetShown(d.kind == "item" and not d.extra)  -- mounts/toys: no favorites (gear lists)
+    if d.kind == "item" and d.extra then
+        local item = d.item
+        row:SetBarStyle("item")
+        row:SetBarQuality(item.q or select(3, ns.GetItemInfo(d.id)))  -- quality: the client's, if not shipped
+        row:SetBarIcon(rowIcon(d.id))
+        setItemColumnsShown(row, true)
+        row.score:Show()
+        row.mark:SetText("")
+        row.name:SetText(item.n or ns.GetItemInfo(d.id) or ("Item " .. d.id))
+        row.slot:SetText(ns.ExtraLabel(item))
+        row.lvl:SetText(levelText(item))
+        row.score:SetText("")
+        row.source:SetText(ns:SourceSummary(d.id, d.zone))
+        setRowDone(row, false)
+    elseif d.kind == "item" then
         local item = d.item
         row.star:SetFavorite(ns:IsFavorite(d.id))
         row:SetBarStyle("item")
@@ -466,7 +480,7 @@ end
 
 local function rowOnEnter(row, d)
     if d.kind == "item" then
-        ns:ShowItemTooltip(row, d.id, { score = d.score, delta = d.delta, class = d.class,
+        ns:ShowItemTooltip(row, d.id, { score = not d.extra and d.score or nil, delta = d.delta, class = d.class,
             place = placeTooltipBesideWindow })  -- also applied when the tooltip is re-shown
     elseif d.kind == "header" and d.equippedLink then
         GameTooltip:SetOwner(row, "ANCHOR_NONE")
@@ -652,6 +666,23 @@ local function buildBrowserRows()
         end
     end
 
+    -- Additional drops (mounts, toys, recipes; each its own toggle): the name search and the dungeon or
+    -- zone filter apply; class, slot, level and quality don't (they aren't gear). Listed after
+    -- the gear (score -1), not with "Favorites only" or a slot picked.
+    if not f.favOnly and not groupKey then
+        for _, kind in ipairs(ns.EXTRA_KINDS) do
+            if ns:ExtrasOn(kind) then
+                for _, id in ipairs(ns:ExtraItemIds(kind)) do
+                    local item = ns:GetItem(id)
+                    if item and (not inInstance or inInstance[id]) and (text == "" or ns.NameMatches(item.n, text)) then
+                        rows[#rows + 1] = { kind = "item", extra = true, id = id, item = item, score = -1,
+                            class = f.class, spec = spec, zone = zone }
+                    end
+                end
+            end
+        end
+    end
+
     if f.sort == 1 then
         table.sort(rows, function(a, b)
             if a.score ~= b.score then return a.score > b.score end
@@ -787,6 +818,7 @@ local function bodyFinish()
 end
 
 local function itemTypeText(item)
+    if ns.ExtraLabel(item) then return ns.ExtraLabel(item) end
     local slot = (item.eq and _G[item.eq]) or ns.SlotLabel(item.eq)
     local typ
     if item.c == ns.ITEM_CLASS_ARMOR then
@@ -877,6 +909,7 @@ function updateDetail()
     local repText, repMet = ns:ReputationText(id)
     if repText then bodyAdd(repText, small, repMet and "done" or (repMet == false and "partial" or "text"), 2) end
 
+    if not ns.ExtraLabel(item) then  -- gear (mounts and toys: just where to get them)
     -- Completion
     local cState, have, need = ns:GetCompletion(id, class)
     have, need = have or 0, need or 1
@@ -980,6 +1013,8 @@ function updateDetail()
         end
     end
 
+    end  -- gear only
+
     -- Sources
     bodyAdd("Where to get it", hdr, "accent", 10)
     local sources = ns:GetSources(id)
@@ -1018,14 +1053,24 @@ end
 ---------------------------------------------------------------------------
 -- Status / header
 ---------------------------------------------------------------------------
-local function updateStatus()
-    local db, learned = 0, 0
-    for _ in pairs(GearGuide_Data.items) do db = db + 1 end
-    for id in pairs(GearGuideLearned.items) do
-        if not GearGuide_Data.items[id] then learned = learned + 1 end
+-- Item counts change only when the item list is rebuilt (ns:InvalidateItems): counted once per
+-- rebuild, not on every refresh (three passes over ~12k entries).
+local countsFor, countDb, countLearned, countScanned
+local function itemCounts()
+    local ids = ns:AllItemIds()
+    if countsFor ~= ids then
+        countsFor, countDb, countLearned, countScanned = ids, 0, 0, 0
+        for _ in pairs(GearGuide_Data.items) do countDb = countDb + 1 end
+        for id in pairs(GearGuideLearned.items) do
+            if not GearGuide_Data.items[id] then countLearned = countLearned + 1 end
+        end
+        for _ in pairs(GearGuideHarvest.items) do countScanned = countScanned + 1 end
     end
-    local scanned = 0
-    for _ in pairs(GearGuideHarvest.items) do scanned = scanned + 1 end
+    return countDb, countLearned, countScanned
+end
+
+local function updateStatus()
+    local db, learned, scanned = itemCounts()
     local meta = GearGuide_Data.meta or {}
     local parts = {}
     if ns.dataExpired then
@@ -1317,6 +1362,24 @@ local function createBrowseBar(parent)
     W.favCb = Skin:Checkbox(bar, "Favorites only")
     W.favCb.onToggle = function(_, checked) f.favOnly = checked; filterChanged() end
 
+    -- Additional drops: mounts and toys, each its own toggle (off by default).
+    W.extrasBtn = Skin:MenuButton(bar, "Additional drops", Skin.CONTROL_H, {
+        width = 118,
+        tooltip = { "Additional drops", "List mounts, toys and recipes too, with where they drop or are sold "
+            .. "(also on item, creature and vendor tooltips). They aren't gear: no score." },
+        getItems = function()
+            return {
+                { value = "mounts", text = "Mounts", checked = ns:ExtrasOn("mounts"), keepOpen = true },
+                { value = "toys", text = "Toys", checked = ns:ExtrasOn("toys"), keepOpen = true },
+                { value = "recipes", text = "Recipes", checked = ns:ExtrasOn("recipes"), keepOpen = true },
+            }
+        end,
+        onSelect = function(value)
+            ns:SetExtras(value, not ns:ExtrasOn(value))
+            filterChanged()
+        end,
+    })
+
     W.count = Skin:Text(bar, Skin.SIZE.small, "textDim")
     W.count:SetWidth(80)
     W.count:SetWordWrap(false)
@@ -1327,7 +1390,7 @@ local function createBrowseBar(parent)
         { f = W.classSel }, { f = W.specSel }, { f = W.slotSel }, { f = W.instSel }, { f = W.zoneSel },
         { f = lvl },
         { f = W.qualitySel }, { f = W.sortSel },
-        { f = W.usableCb }, { f = W.hideCb }, { f = W.favCb },
+        { f = W.usableCb }, { f = W.hideCb }, { f = W.favCb }, { f = W.extrasBtn },
         { f = W.count, yo = 6, width = function() return 80 end },
     }
     bar:SetScript("OnSizeChanged", layoutBrowseBar)
@@ -1811,8 +1874,15 @@ local function createWindow()
     end)
     W.unknownBtn:HookScript("OnLeave", function() GameTooltip:Hide() end)
 
+    -- GearGuide's version, bottom-left corner (from the .toc).
+    local getMeta = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    local version = getMeta and getMeta("GearGuide", "Version")
+    W.version = Skin:Text(content, Skin.SIZE.small, "textDim")
+    W.version:SetPoint("LEFT", content, "BOTTOMLEFT", 2, FOOTER_H / 2)
+    W.version:SetText(version and ("v" .. version) or "")
+    W.version:SetAlpha(0.7)
     W.status = Skin:Text(content, Skin.SIZE.small, "textDim")
-    W.status:SetPoint("LEFT", content, "BOTTOMLEFT", 2, FOOTER_H / 2)
+    W.status:SetPoint("LEFT", W.version, "RIGHT", version and 10 or 0, 0)
     W.status:SetPoint("RIGHT", W.unknownBtn, "LEFT", -Skin.GAP - 4, 0)
     W.status:SetWordWrap(false)
 
@@ -1938,8 +2008,8 @@ function ns:RefreshUI()
         data = buildBrowserRows()
     end
     state.data = data
-    list:SetData(data)
-    list:SetSelected(isSelected)
+    list:SetSelected(isSelected, true)
+    list:SetData(data)  -- one redraw with the new rows and selection
     if state.resetScroll then
         state.resetScroll = false
         list:ScrollToTop()

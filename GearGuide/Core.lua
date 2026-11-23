@@ -27,6 +27,9 @@ local defaults = {
     -- Appearance (Skin.lua): color theme, hand-picked colors over it (colors[key] = {r, g, b}), window
     -- border style and size (borderSize nil = the style's own), blue/orange upgrade numbers, text size
     skin = { theme = "copper", colors = {}, border = "solid", colorblind = false, textScale = 1 },
+    -- Gear Browser "Additional drops": mounts and toys listed (with their sources, also on item and
+    -- creature/vendor tooltips). Off by default: GearGuide is about gear.
+    extras = { mounts = false, toys = false, recipes = false },
     levelUpGear = true,   -- on level up, list bag/bank gear you can now wear that's an upgrade (Tracking.lua)
 }
 
@@ -77,6 +80,30 @@ function ns.StandingName(s)
     return _G["FACTION_STANDING_LABEL" .. tostring(s)] or STANDING_NAMES[s] or ("standing " .. tostring(s))
 end
 
+-- "Revered" (the client's own words first) -> 7.
+function ns.StandingFromName(text)
+    for i = 1, 8 do
+        if text == _G["FACTION_STANDING_LABEL" .. i] or text == STANDING_NAMES[i] then return i end
+    end
+end
+
+-- A faction's ID from its name, among the factions the player has met (nil when not listed).
+function ns.FactionIdByName(name)
+    if not name then return nil end
+    if C_Reputation and C_Reputation.GetNumFactions and C_Reputation.GetFactionDataByIndex then
+        for i = 1, (C_Reputation.GetNumFactions() or 0) do
+            local ok, d = pcall(C_Reputation.GetFactionDataByIndex, i)
+            if ok and type(d) == "table" and d.name == name and d.factionID then return d.factionID end
+        end
+    end
+    if GetNumFactions and GetFactionInfo then
+        for i = 1, (GetNumFactions() or 0) do
+            local n, _, _, _, _, _, _, _, _, _, _, _, _, fid = GetFactionInfo(i)
+            if n == name and fid then return fid end
+        end
+    end
+end
+
 local function thousands(n)
     local s = tostring(math.floor(n + 0.5))
     while true do
@@ -102,7 +129,14 @@ end
 function ns:ReputationNeed(id)
     local item = GearGuide_Data and GearGuide_Data.items and GearGuide_Data.items[id]
     local rp = item and item.rp
-    if type(rp) ~= "table" or not rp[1] or not rp[2] then return nil end
+    if type(rp) ~= "table" or not rp[1] or not rp[2] then
+        -- Read from a vendor's tooltip in game (Sources.lua): WoW: Forever's own factions.
+        local learned = GearGuideLearned and GearGuideLearned.reps and GearGuideLearned.reps[id]
+        if type(learned) ~= "table" or not learned.s then return nil end
+        local fid = learned.f or ns.FactionIdByName(learned.n)
+        if not fid then return { standing = learned.s, name = learned.n } end
+        rp = { fid, learned.s }
+    end
     local name, standing, value = self:FactionStanding(rp[1])
     local need = { faction = rp[1], standing = rp[2], name = name, have = standing }
     if standing then
@@ -141,6 +175,73 @@ function ns.ItemIcon(id)
         icon = GetItemIcon(id)
     end
     return icon or ns.QUESTION_ICON
+end
+
+---------------------------------------------------------------------------
+-- Additional drops: mounts, toys and recipes (item.x = "m" mount, "t" toy candidate, "r" recipe;
+-- shipped in Data.lua or learned in game). They are
+-- not gear: never scored or recommended, only listed when their Gear Browser toggle is on.
+-- Toy candidates are the build's "Miscellaneous - Other" items; the client's toy box says which
+-- really are toys.
+---------------------------------------------------------------------------
+local EXTRA_KIND = { m = "mounts", t = "toys", r = "recipes" }
+ns.EXTRA_KINDS = { "mounts", "toys", "recipes" }
+function ns.ExtraKind(item) return type(item) == "table" and EXTRA_KIND[item.x] or nil end
+
+function ns:ExtrasOn(kind)
+    local e = GearGuideDB and GearGuideDB.extras
+    return e ~= nil and e[kind] == true
+end
+
+function ns:SetExtras(kind, on)
+    GearGuideDB.extras = GearGuideDB.extras or {}
+    GearGuideDB.extras[kind] = on and true or false
+    self:InvalidateSourceIndexes()  -- lists, tooltips and creature/vendor tips change
+end
+
+local toyConfirmed = {}
+function ns:IsToy(id)
+    if toyConfirmed[id] then return true end
+    local get = C_ToyBox and C_ToyBox.GetToyInfo
+    local ok, itemID = false, nil
+    if get then ok, itemID = pcall(get, id) end
+    if ok and itemID then toyConfirmed[id] = true; return true end
+    return false  -- not a toy, or not known yet: asked again next time (cheap)
+end
+
+-- Is this item a mount or toy whose toggle is on (and, for toys, confirmed by the client)?
+function ns:ExtraShown(id, item)
+    item = item or self:GetItem(id)
+    local kind = ns.ExtraKind(item)
+    if not kind or not self:ExtrasOn(kind) then return false end
+    return kind ~= "toys" or self:IsToy(id)
+end
+
+local extraIds
+function ns:ExtraItemIds(kind)
+    if not extraIds then
+        extraIds = { mounts = {}, toys = {}, recipes = {} }
+        local seen = {}
+        for _, layer in ipairs({ GearGuide_Data.items or {}, GearGuideLearned and GearGuideLearned.items or {} }) do
+            for id, item in pairs(layer) do
+                local k = not seen[id] and ns.ExtraKind(item)
+                if k then seen[id] = true; extraIds[k][#extraIds[k] + 1] = id end
+            end
+        end
+        for _, list in pairs(extraIds) do table.sort(list) end
+    end
+    local out = {}
+    for _, id in ipairs(extraIds[kind] or {}) do
+        if kind ~= "toys" or self:IsToy(id) then out[#out + 1] = id end
+    end
+    return out
+end
+
+function ns:InvalidateExtraIds() extraIds = nil end
+
+function ns.ExtraLabel(item)
+    local kind = ns.ExtraKind(item)
+    return kind == "mounts" and "Mount" or kind == "toys" and "Toy" or kind == "recipes" and "Recipe" or nil
 end
 
 function ns.SlotLabel(eq)
@@ -260,7 +361,21 @@ end
 -- WoW: Forever client links them) bonus ids after the 13th field:
 --   item:10777::::::::42:1488::1:1:13171:1:28:5245  -> 1 bonus id, 13171
 -- Returns a key naming the bonus ("s604", "b13171") or nil. Stats then come from the tooltip.
+-- Memoized per link (tooltips, bags and the party view ask for the same links again and again).
+local bonusMemo, bonusCount = {}, 0
+local linkBonus
 function ns.LinkBonus(link)
+    if type(link) ~= "string" then return linkBonus(link) end
+    local v = bonusMemo[link]
+    if v == nil then
+        if bonusCount >= 500 then wipe(bonusMemo); bonusCount = 0 end
+        v = linkBonus(link) or false
+        bonusMemo[link], bonusCount = v, bonusCount + 1
+    end
+    return v or nil
+end
+
+function linkBonus(link)
     local s = ns.LinkSuffix(link)
     if s then return "s" .. s end
     local body = type(link) == "string" and link:match("item:([%-%d:]*)")
@@ -431,8 +546,13 @@ function ns:AllItemIds()
                 -- Judge by the record GetItem returns (newest layer wins). Provisional raid items
                 -- (pv, from the build's cmangos import) only count once the client has returned its
                 -- own record for them (Harvest.lua VerifyProvisional).
+                -- Shipped records were filtered by build_db.py with the same rules: only scanned and
+                -- learned ones need the name checks (~200k pattern matches saved per rebuild).
                 local item = self:GetItem(id)
-                if not item.pv and not ns.IsJunkItem(item) then list[#list + 1] = id end
+                if not item.pv and not item.x  -- mounts and toys: ExtraItemIds
+                    and (item == GearGuide_Data.items[id] or not ns.IsJunkItem(item)) then
+                    list[#list + 1] = id
+                end
             end
         end
     end
@@ -442,13 +562,24 @@ end
 
 function ns:InvalidateItems()
     self.idCache = nil
+    self:InvalidateExtraIds()
+    self:InvalidateSourceIndexes()
+end
+
+-- New sources may add dungeon or zone loot: the Gear Browser's Instance/Zone indexes are rebuilt
+-- (only then: gear, level or settings changes don't touch them).
+function ns:InvalidateSourceIndexes()
+    self.instanceIndex, self.zoneIndex = nil, nil
     self:RequestRefresh()
 end
 
 -- "A" (Alliance) or "H" (Horde); nil before the faction is known (e.g. Pandaren choosing).
+local knownFaction  -- asked per item in scans: remembered once known (it never changes)
 function ns.PlayerFaction()
+    if knownFaction then return knownFaction end
     local group = UnitFactionGroup and UnitFactionGroup("player")
-    return (group == "Alliance" and "A") or (group == "Horde" and "H") or nil
+    knownFaction = (group == "Alliance" and "A") or (group == "Horde" and "H") or nil
+    return knownFaction
 end
 
 -- Creature name -> { { z = zone name, loc = locations }, ... } from shipped drop sources that have a
@@ -553,7 +684,7 @@ local function worldSource(id)
              dc = usual, k = "boe" }
 end
 
-function ns:GetSources(id)
+local function computeSources(self, id)
     local out, seen = {}, {}
     local faction = ns.PlayerFaction()
     local knownDroppers  -- shipped drop names, when the shipped data knows the item's loot table
@@ -631,7 +762,8 @@ function ns:GetSources(id)
     -- Creatures without a known location: where the player has found them (Sources.lua spots).
     local spots, spotZones = GearGuideLearned.spots or {}, GearGuideLearned.spotZones or {}
     for i, s in ipairs(out) do
-        if s.t == "drop" and s.k ~= "object" and not s.loc and s.n and (spots[s.n] or spotZones[s.n]) then
+        if (s.t == "drop" and s.k ~= "object" or s.t == "vendor") and not s.loc and s.n
+            and (spots[s.n] or spotZones[s.n]) then
             local c = {}
             for k, v in pairs(s) do c[k] = v end
             local maps = {}
@@ -645,6 +777,36 @@ function ns:GetSources(id)
                 c.z = (info and info.name) or spotZones[s.n]
             end
             out[i] = c
+        end
+    end
+    -- Crafted: the recipe's own source ("Crafted: Leatherworking (Pattern: X)" -> the recipe item,
+    -- now in the database as an additional drop). Its first source with a map location gives the
+    -- craft source its map location (clicking it shows where to get the recipe) and is named on it.
+    local RECIPE_PREFIXES = { "Pattern: ", "Plans: ", "Schematic: ", "Formula: ", "Recipe: ", "Design: ", "Manual: " }
+    for i, s in ipairs(out) do
+        local rname = s.t == "craft" and type(s.n) == "string" and s.n:match("%((.-)%)$")
+        local rid = rname and self:RecipeIdByName(rname)
+        if s.t == "craft" and not rid then  -- learned crafts name only the profession: by the item's name
+            local own = self:GetItem(id)
+            for _, prefix in ipairs(own and own.n and RECIPE_PREFIXES or {}) do
+                rid = self:RecipeIdByName(prefix .. own.n)
+                if rid then break end
+            end
+        end
+        if rid and rid ~= id then
+            local first, located
+            for _, rs in ipairs(self:GetSources(rid)) do
+                first = first or rs
+                if ns.HasLocation(rs) then located = rs; break end
+            end
+            local via = located or first
+            if via then
+                local c = {}
+                for k, v in pairs(s) do c[k] = v end
+                c.recipe, c.via = rid, ns.FormatSource(via)
+                if not c.loc and located then c.loc, c.z = located.loc, c.z or located.z end
+                out[i] = c
+            end
         end
     end
     -- Vendor prices live apart from the sources (keyed by vendor name), so shipped and learned
@@ -661,6 +823,38 @@ function ns:GetSources(id)
         end
     end
     return out
+end
+
+-- Every source line of an item, as the tooltip, item details, lists and zone picks show it.
+-- Cached per item (the item list's rows, tooltips and zone picks ask for the same items over and
+-- over); cleared whenever sources, spots or prices are learned and on every refresh. Callers
+-- only read the list.
+-- Recipe items (additional drops, x = "r") by name: "Pattern: Fine Leather Boots" -> item ID.
+local recipeByName
+function ns:RecipeIdByName(name)
+    if not recipeByName then
+        recipeByName = {}
+        for _, layer in ipairs({ GearGuide_Data.items or {}, GearGuideLearned and GearGuideLearned.items or {} }) do
+            for rid, item in pairs(layer) do
+                if item.x == "r" and item.n and not recipeByName[item.n] then recipeByName[item.n] = rid end
+            end
+        end
+    end
+    return recipeByName[name]
+end
+
+local sourcesCache, sourcesCount = {}, 0
+function ns:InvalidateSourcesCache() wipe(sourcesCache); sourcesCount = 0; recipeByName = nil end
+function ns:GetSources(id)
+    local list = sourcesCache[id]
+    if not list then
+        if sourcesCount >= 3000 then wipe(sourcesCache); sourcesCount = 0 end
+        list = computeSources(self, id)
+        if #list > 0 then  -- not "none yet": data arriving late must show at once (and none is cheap)
+            sourcesCache[id], sourcesCount = list, sourcesCount + 1
+        end
+    end
+    return list
 end
 
 -- { g = copper or nil, c = { {n = currency, q = amount, i = icon}, ... } or nil } for an item at a
@@ -1022,8 +1216,10 @@ function ns:IsRaidGear(item)
 end
 
 -- Raid gear waits for max level (favorites still show: the player picked those).
+local maxLevel  -- the level cap, asked per item in scans
 function ns:RaidGearTooEarly(item, level)
-    local max = (GetMaxPlayerLevel and GetMaxPlayerLevel()) or 60
+    maxLevel = maxLevel or (GetMaxPlayerLevel and GetMaxPlayerLevel()) or 60
+    local max = maxLevel
     return (level or 1) < max and self:IsRaidGear(item)
 end
 
@@ -1067,10 +1263,15 @@ end
 function ns.FormatSource(s)
     local text = (SOURCE_LABELS[s.t] or s.t or "?") .. ": " .. (s.n or "?")
     local zone = ns.ZoneName(s.z)
-    if zone and zone ~= "" then text = text .. " (" .. zone .. ")" end
+    if zone == s.n then
+        text = text .. " |cff888888(creature unknown)|r"  -- a dungeon drop credited to the dungeon
+    elseif zone and zone ~= "" then
+        text = text .. " (" .. zone .. ")"
+    end
     if s.dc then text = text .. " |cffffd100" .. ns.FormatChance(s.dc) .. "|r" end
     if s.price then text = text .. " |cffffffff- " .. ns.FormatPrice(s.price) .. "|r" end
     if s.shared then text = text .. " |cff888888(shared by players)|r" end
+    if s.via then text = text .. " |cff888888- recipe: " .. s.via:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "") .. "|r" end
     if s.k == "guess" then text = text .. " |cff888888(likely)|r" end
     if s.k == "rare" then text = text .. " |cffc0c0c0(rare)|r" end
     if s.k == "boe" then text = text .. " |cff888888(BoE)|r" end
@@ -1264,8 +1465,13 @@ function ns:GetPlayerSpec()
             if s.key == chosen then return chosen end
         end
     end
-    local detected = self:DetectPlayerSpec()
-    return detected or (self:GetSpecs()[1] or {}).key
+    -- Talent reads (3 API calls) are asked for on every score and badge: kept for 2 seconds and
+    -- dropped on every refresh (talent and level events request one).
+    local now = GetTime and GetTime() or 0
+    if self.detectedAt == nil or now - self.detectedAt > 2 then
+        self.detectedSpec, self.detectedAt = self:DetectPlayerSpec(), now
+    end
+    return self.detectedSpec or (self:GetSpecs()[1] or {}).key
 end
 
 -- key = a spec key, "AUTO" (follow talents) or "CUSTOM" (the player's own stat weights).
@@ -1508,10 +1714,13 @@ local function weightsFor(item, weights, ctx)
     local ranged = weights.RDPS ~= nil and RANGED_LOCS[item.eq] == true
     local spell = SPELL_ROLES[ctx.role] == true
     local level = ctx.level or 60
-    local key = level .. (spell and "s" or "m") .. (ranged and "r" or "")
-    local byKey = derivedWeights[weights]
-    if not byKey then byKey = {}; derivedWeights[weights] = byKey end
-    local w = byKey[key]
+    -- [level][variant]: numbers as keys, no string built per scored item
+    local variant = (spell and 2 or 0) + (ranged and 1 or 0) + 1
+    local byLevel = derivedWeights[weights]
+    if not byLevel then byLevel = {}; derivedWeights[weights] = byLevel end
+    local byKey = byLevel[level]
+    if not byKey then byKey = {}; byLevel[level] = byKey end
+    local w = byKey[variant]
     if not w then
         w = {}
         for k, v in pairs(weights) do
@@ -1519,7 +1728,7 @@ local function weightsFor(item, weights, ctx)
             w[k] = pct and v * pct or v
         end
         if ranged then w.DPS = weights.RDPS end
-        byKey[key] = w
+        byKey[variant] = w
     end
     return w
 end
@@ -1568,9 +1777,11 @@ end
 -- Refresh scheduling (coalesces bursts of events into one UI rebuild)
 ---------------------------------------------------------------------------
 function ns:RequestRefresh()
+    if self.InvalidateRecommendations then self:InvalidateRecommendations() end  -- even while pending
+    self:InvalidateSourcesCache()
+    self.detectedAt = nil  -- talents may have changed
     if self.refreshPending then return end
     self.refreshPending = true
-    self.instanceIndex, self.zoneIndex = nil, nil  -- new sources may add instance or zone loot
     if self.InvalidateCreatureTips then self:InvalidateCreatureTips() end  -- upgrades may have changed
     if self.InvalidateBadges then self:InvalidateBadges() end
     C_Timer.After(0.3, function()
@@ -1710,6 +1921,10 @@ SlashCmdList.GEARGUIDE = function(msg)
         local want = rest:lower()
         if want == "on" or want == "off" then ns:SetSharing(want == "on")
         else ns:SetSharing(not ns:IsSharingEnabled()) end
+    elseif cmd == "dev" and rest:lower():match("^tips?") then
+        -- /gg dev tips: print what each unit/item tooltip hook can read (dungeons may hide it)
+        ns.tipTrace = not ns.tipTrace
+        ns.Print("Tooltip trace " .. (ns.tipTrace and "on: hover a creature or item." or "off."))
     elseif cmd == "dev" and rest:lower():match("^loot") then
         ns:ToggleLootTrace()  -- /gg dev loot: print where each looted item is credited (Sources.lua)
     elseif cmd == "dev" and rest:lower():match("^toast") then

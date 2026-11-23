@@ -88,7 +88,62 @@ end
 -- The same picks the Recommended list shows, plus every upgrade and every favorite; rebuilt after
 -- any refresh (level up, gear change, settings).
 local recommendedCache
-function ns:InvalidateCreatureTips() recommendedCache = nil end
+-- The filtered drop list per creature: a unit tooltip is rebuilt many times while the mouse
+-- rests on it, and walking the learned/shared stores each time adds up. Cleared on every refresh
+-- (new sources, gear, level, favorites) and keyed by the tooltip settings.
+local dropsCache, dropsCount = {}, 0
+local vendorIndex  -- shipped: vendor name -> { [itemID] = true } (built once)
+function ns:InvalidateCreatureTips() recommendedCache = nil; wipe(dropsCache); dropsCount = 0 end
+-- What a vendor sells that GearGuide knows: gear, mounts and toys ({ {id}, ... }), from the
+-- shipped sources and the player's own visits.
+function ns:GetVendorWares(name)
+    if not name or IGNORED[name] then return {} end
+    if not vendorIndex then
+        vendorIndex = {}
+        local data = GearGuide_Data
+        local pool = data and data.sources or {}
+        for id, item in pairs(data and data.items or {}) do
+            for _, ref in ipairs(type(item.src) == "table" and item.src or {}) do
+                local s = type(ref) == "number" and pool[ref] or ref
+                if type(s) == "table" and s.t == "vendor" and s.n then
+                    vendorIndex[s.n] = vendorIndex[s.n] or {}
+                    vendorIndex[s.n][id] = true
+                end
+            end
+        end
+    end
+    local found = {}
+    for id in pairs(vendorIndex[name] or {}) do found[id] = true end
+    for id, list in pairs(GearGuideLearned and GearGuideLearned.sources or {}) do
+        if not found[id] then
+            for _, s in ipairs(type(list) == "table" and list or {}) do
+                if s.t == "vendor" and s.n == name then found[id] = true; break end
+            end
+        end
+    end
+    local out = {}
+    for id in pairs(found) do
+        if self:GetItem(id) and self:ShowsItem(id) then out[#out + 1] = { id = id } end  -- not unconfirmed (pv) items
+    end
+    return out
+end
+
+local function cachedDrops(name, vendor)
+    local cfg = GearGuideDB.tipDrops or {}
+    local key = (vendor and "v|" or "d|") .. name .. "|" .. tostring(cfg.show) .. "|" .. tostring(cfg.minQuality)
+        .. "|" .. tostring(cfg.bracket) .. "|" .. tostring(cfg.world)
+    local drops = dropsCache[key]
+    if not drops then
+        if dropsCount >= 200 then wipe(dropsCache); dropsCount = 0 end  -- a long session's creatures
+        if vendor then
+            drops = ns:FilterCreatureDrops(ns:GetVendorWares(name), true)
+        else
+            drops = ns:FilterCreatureDrops(ns:GetCreatureDrops(name))
+        end
+        dropsCache[key], dropsCount = drops, dropsCount + 1
+    end
+    return drops
+end
 local function recommended()
     if not recommendedCache then
         local rec = {}
@@ -118,10 +173,13 @@ function ns.TipDropLevels(bracket, level)
     return math.max(1, level - (GearGuideDB.levelBehind or 5)), level + (GearGuideDB.levelAhead or 3)
 end
 
--- The drops the settings let through, best first: { {id, dc, world, gain}, ... }.
-function ns:FilterCreatureDrops(drops)
+-- The drops the settings let through, best first: { {id, dc, world, gain}, ... }. Mounts and
+-- toys only with their Gear Browser toggle on (no other filter). vendor: a vendor's wares, where
+-- "upgrades" lists all gear your class can use (upgrades first): a vendor is worth knowing about.
+function ns:FilterCreatureDrops(drops, vendor)
     local cfg = GearGuideDB.tipDrops or {}
     local show = cfg.show or "upgrades"
+    if vendor and show == "upgrades" then show = "usable" end
     local minQ = tonumber(cfg.minQuality) or 2
     local class, level = self:GetPlayerClass(), ns.Plain(UnitLevel("player")) or 1
     local lo, hi = ns.TipDropLevels(cfg.bracket or "range", level)
@@ -131,7 +189,11 @@ function ns:FilterCreatureDrops(drops)
         local item = self:GetItem(d.id)
         local fav = self:IsFavorite(d.id)
         local keep = item ~= nil and (cfg.world ~= false or not d.world)
-        if keep and not fav then  -- favorites skip the filters: the player picked them on purpose
+        local extra = item and ns.ExtraKind(item)
+        if extra then
+            keep, fav = self:ExtraShown(d.id, item), false
+            d.extra = ns.ExtraLabel(item)
+        elseif keep and not fav then  -- favorites skip the filters: the player picked them on purpose
             local eff = ns.EffectiveLevel(item)
             keep = (item.q or 1) >= minQ and eff >= lo and eff <= hi
             if keep and show == "upgrades" then keep = wanted[d.id] ~= nil
@@ -146,7 +208,8 @@ function ns:FilterCreatureDrops(drops)
     end
     table.sort(out, function(a, b)
         -- The creature's own loot before world drops any creature of its level has; then the
-        -- biggest upgrade, then the likeliest drop.
+        -- biggest upgrade, then the likeliest drop. Mounts and toys after the gear.
+        if (a.extra and 1 or 0) ~= (b.extra and 1 or 0) then return not a.extra end
         if a.world ~= b.world then return not a.world end
         if a.gain ~= b.gain then return a.gain > b.gain end
         if (a.dc or 0) ~= (b.dc or 0) then return (a.dc or 0) > (b.dc or 0) end
@@ -155,13 +218,45 @@ function ns:FilterCreatureDrops(drops)
     return out
 end
 
-local function addDrops(tip)
-    if not (GearGuideDB and GearGuideDB.creatureTips) or not tip.GetUnit then return end
+-- Who the unit tooltip is about: name, or nil for players and unknown units. Dungeons can hide
+-- unit data from addons (secret values): then the tooltip's own data and first line, and the
+-- GUID's kind ("Player-..."/"Creature-...") stand in.
+local function tipCreature(tip, data)
+    local Plain = ns.Plain
     local name, unit = tip:GetUnit()
-    name, unit = ns.Plain(name), ns.Plain(unit)
-    if not name or (unit and ns.Plain(UnitIsPlayer(unit)) ~= false) then return end
-    local drops = ns:FilterCreatureDrops(ns:GetCreatureDrops(name))
-    if #drops == 0 then return end
+    name, unit = Plain(name), Plain(unit)
+    if not name and type(data) == "table" and type(data.lines) == "table" and data.lines[1] then
+        name = Plain(data.lines[1].leftText)
+    end
+    if not name and tip.GetName and tip:GetName() then
+        local line = _G[tip:GetName() .. "TextLeft1"]
+        name = line and Plain(line:GetText())
+    end
+    local player = unit and Plain(UnitIsPlayer(unit))
+    if player == nil then
+        local guid = Plain(type(data) == "table" and data.guid or nil) or (unit and Plain(UnitGUID(unit)))
+        if type(guid) == "string" then player = guid:find("^Player") ~= nil end
+    end
+    if ns.tipTrace then
+        ns.Print(string.format("unit tip: name %s, unit %s, player %s", tostring(name), tostring(unit), tostring(player)))
+    end
+    if type(name) ~= "string" or name == "" or player == true then return nil end
+    return name  -- player == nil (hidden): a player named like a creature is very unlikely
+end
+
+local addList  -- (below)
+local function addDrops(tip, data)
+    if not (GearGuideDB and GearGuideDB.creatureTips) or not tip.GetUnit then return end
+    local name = tipCreature(tip, data)
+    if not name then return end
+    local drops, wares = cachedDrops(name), cachedDrops(name, true)
+    if #drops == 0 and #wares == 0 then return end
+    if #drops > 0 then addList(tip, drops) end
+    if #wares > 0 then addList(tip, wares, "GearGuide - sells") end
+    tip:Show()  -- resize for the added lines
+end
+
+function addList(tip, drops, fixedTitle)
     local show = (GearGuideDB.tipDrops or {}).show or "upgrades"
     local shown = math.min(#drops, MAX_LINES)
     -- World drops share one chance text ("<0.1%"): said once on their header, not on every line.
@@ -175,7 +270,7 @@ local function addDrops(tip)
     end
     if mixed then worldChance = nil end
     tip:AddLine(" ")
-    local title = show == "upgrades" and "GearGuide - upgrades and favorites" or "GearGuide - gear drops"
+    local title = fixedTitle or (show == "upgrades" and "GearGuide - upgrades and favorites" or "GearGuide - gear drops")
     local class = ns:GetPlayerClass()
     local worldHeader = false
     for i = 1, shown do
@@ -196,8 +291,9 @@ local function addDrops(tip)
         local item = ns:GetItem(d.id)
         local icon = ns.ItemIcon(d.id)
         local left = (icon and ("|T" .. icon .. ":14:14|t ") or "")
-            .. ns.QualityHex(item.q) .. (item.n or ("item " .. d.id)) .. "|r"
-        local mark = ns:CompletionMarkup(d.id, class)
+            .. ns.QualityHex(item.q or select(3, ns.GetItemInfo(d.id)) or 1) .. (item.n or ("item " .. d.id)) .. "|r"
+        if d.extra then left = left .. " " .. ns.Skin:Hex("textDim") .. "(" .. d.extra .. ")|r" end
+        local mark = d.extra and "" or ns:CompletionMarkup(d.id, class)
         if mark ~= "" then left = left .. " " .. mark end
         if d.fav then left = left .. " |cffffd100*|r" end
         if d.gain > 0 then left = left .. " " .. ns.Skin:Hex("upgrade") .. string.format("+%.1f|r", d.gain)
@@ -217,8 +313,8 @@ function ns:EnableCreatureTips()
     -- Newer clients (Forever) run tooltip post-calls; older ones fire OnTooltipSetUnit.
     if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType
         and Enum.TooltipDataType.Unit then
-        TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tip)
-            if tip == GameTooltip then pcall(addDrops, tip) end
+        TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tip, data)
+            if tip == GameTooltip then pcall(addDrops, tip, data) end
         end)
     elseif GameTooltip.HookScript then
         GameTooltip:HookScript("OnTooltipSetUnit", function(tip) pcall(addDrops, tip) end)

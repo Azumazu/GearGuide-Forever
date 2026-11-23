@@ -223,12 +223,51 @@ local function addReputationLine(tip, link)
 end
 ns.AddReputationTooltipLine = addReputationLine  -- (tests)
 
+-- Mounts and toys (Gear Browser "Additional drops" toggles on): where to get them, on the game's
+-- own item tooltips too (bags, links, vendors, loot).
+local EXTRA_LINES = 4
+local function addExtraSourceLines(tip, link)
+    link = ns.Plain(link)
+    if not link then
+        local ok, _, l = pcall(tip.GetItem, tip)
+        link = ok and ns.Plain(l) or nil
+    end
+    local id = link and ns.LinkToId(link)
+    if not (id and ns:ExtraShown(id)) then return false end
+    local sources = ns:GetSources(id)
+    if #sources == 0 then return false end
+    tip:AddLine("GearGuide: where to get it", 1, 0.82, 0)
+    for i = 1, math.min(#sources, EXTRA_LINES) do
+        tip:AddLine("  " .. ns.FormatSource(sources[i]), 1, 1, 1, true)
+    end
+    if #sources > EXTRA_LINES then
+        tip:AddLine(string.format("  ...and %d more (Gear Browser > Additional drops)", #sources - EXTRA_LINES), 0.6, 0.6, 0.6)
+    end
+    return true
+end
+ns.AddExtraSourceLines = addExtraSourceLines  -- (tests)
+
+-- The item's link from the tooltip data. Dungeons can hide the link from addons (a secret value);
+-- the item ID usually stays readable, and "item:ID" then stands in (no random bonus).
+local function tipLink(tip, data)
+    local link = ns.Plain(type(data) == "table" and data.hyperlink or nil)
+    if not link and type(data) == "table" then
+        local id = ns.Plain(data.id)
+        if type(id) == "number" then link = "item:" .. id end
+    end
+    if ns.tipTrace then ns.Print("item tip: " .. tostring(link)) end
+    return link
+end
+ns.TooltipLink = tipLink  -- (tests)
+
 if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType
     and Enum.TooltipDataType.Item then
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tip, data)
-        pcall(addGainLine, tip, data and data.hyperlink)
-        pcall(addReputationLine, tip, data and data.hyperlink)
-        pcall(addVariantLines, tip, data and data.hyperlink)
+        local link = tipLink(tip, data)
+        pcall(addGainLine, tip, link)
+        pcall(addReputationLine, tip, link)
+        pcall(addVariantLines, tip, link)
+        pcall(addExtraSourceLines, tip, link)
     end)
 else
     for _, t in ipairs({ GameTooltip, ItemRefTooltip }) do
@@ -237,7 +276,8 @@ else
                 local ok1, gainAdded = pcall(addGainLine, tip)
                 local ok3, repAdded = pcall(addReputationLine, tip)
                 local ok2, added = pcall(addVariantLines, tip)
-                if (ok1 and gainAdded) or (ok2 and added) or (ok3 and repAdded) then tip:Show() end
+                local ok4, extraAdded = pcall(addExtraSourceLines, tip)
+                if (ok1 and gainAdded) or (ok2 and added) or (ok3 and repAdded) or (ok4 and extraAdded) then tip:Show() end
             end)
         end
     end
